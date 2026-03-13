@@ -9,7 +9,8 @@ connectDB()
 const app = express()
 
 // ── Middleware ──────────────────────────────────────────
-app.use(cors({ origin: 'http://localhost:5173', credentials: true }))
+// In production, you might restrict this to your specific Vercel URL
+app.use(cors({ origin: '*', credentials: true }))
 app.use(express.json())
 app.use(express.urlencoded({ extended: false }))
 
