@@ -1,5 +1,5 @@
 -- FreshPress Laundry App Database Schema
--- Creates profiles, bookings, and orders tables with RLS policies
+-- Creates profiles and bookings tables with RLS policies
 
 -- ══════════════════════════════════════
 -- PROFILES TABLE
@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 );
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "profiles_select_own" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_insert_own" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_update_own" ON public.profiles;
+DROP POLICY IF EXISTS "profiles_delete_own" ON public.profiles;
 
 CREATE POLICY "profiles_select_own" ON public.profiles 
   FOR SELECT USING (auth.uid() = id);
@@ -40,13 +45,18 @@ CREATE TABLE IF NOT EXISTS public.bookings (
   pickup_date DATE NOT NULL,
   time_slot TEXT NOT NULL,
   notes TEXT,
-  status INTEGER DEFAULT 0, -- 0: Placed, 1: Picked Up, 2: Cleaning, 3: Ready, 4: Delivered
+  status INTEGER DEFAULT 0,
   color TEXT DEFAULT '#4fc3f7',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "bookings_select_own" ON public.bookings;
+DROP POLICY IF EXISTS "bookings_insert_own" ON public.bookings;
+DROP POLICY IF EXISTS "bookings_update_own" ON public.bookings;
+DROP POLICY IF EXISTS "bookings_delete_own" ON public.bookings;
 
 CREATE POLICY "bookings_select_own" ON public.bookings 
   FOR SELECT USING (auth.uid() = user_id);
