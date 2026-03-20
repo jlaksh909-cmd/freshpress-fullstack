@@ -1,0 +1,64 @@
+/* HowItWorksPage.css */
+
+.hiw-page-root {
+  min-height: 100vh;
+  background: #07071a;
+  color: #eef2ff;
+  font-family: 'Outfit', sans-serif;
+  overflow-x: hidden;
+  padding-top: 100px; /* Space for navbar */
+}
+
+/* Steps Section */
+.steps-section { padding: 80px 48px 120px; position: relative; }
+.steps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 28px; max-width: 960px; margin: 0 auto;
+  position: relative;
+}
+.step-card {
+  text-align: center; padding: 36px 24px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 20px; position: relative;
+  transition: transform .3s, border-color .3s;
+}
+.step-card:hover { transform: translateY(-6px); border-color: rgba(79,195,247,.35); }
+.step-num {
+  font-size: .75rem; font-weight: 900; letter-spacing: .1em;
+  color: rgba(79,195,247,.5); margin-bottom: 12px;
+}
+.step-icon { font-size: 2.2rem; margin-bottom: 14px; }
+.step-card h4 { font-size: 1rem; font-weight: 700; margin-bottom: 8px; }
+.step-card p  { font-size: .85rem; color: rgba(238,242,255,.55); line-height: 1.6; }
+
+.steps-cta { text-align: center; margin-top: 40px; }
+
+/* Stats Banner */
+.stats-banner {
+  padding: 70px 48px;
+  background: rgba(79,195,247,.04);
+  border-top: 1px solid rgba(79,195,247,.1);
+  border-bottom: 1px solid rgba(79,195,247,.1);
+  position: relative; overflow: hidden;
+}
+.stats-bg-anim {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at center, rgba(79,195,247,.05) 0%, transparent 70%);
+  animation: bgGlowPulse 3s ease-in-out infinite;
+}
+.stats-inner {
+  display: flex; align-items: center; justify-content: center;
+  gap: 60px; flex-wrap: wrap; position: relative;
+}
+.stats-inner .stat-num { font-size: 2.4rem; font-weight: 900; color: #f5c842; }
+.stat-item { text-align: center; }
+.stat-label { font-size: .75rem; color: rgba(238,242,255,.5); text-transform: uppercase; letter-spacing: .05em; }
+.stat-divider { width: 1px; height: 36px; background: rgba(255,255,255,.12); }
+
+@media (max-width: 900px) {
+  .steps-section { padding: 40px 24px 80px; }
+  .hiw-page-root { padding-top: 80px; }
+  .stats-inner { gap: 30px; }
+}

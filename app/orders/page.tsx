@@ -14,7 +14,9 @@ interface Booking {
   pickup_time: string
   address: string
   instructions: string | null
-  status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled"
+  status: "pending" | "confirmed" | "in_progress" | "processing" | "ready" | "completed" | "cancelled"
+  before_photo_url?: string | null
+  after_photo_url?: string | null
   created_at: string
 }
 
@@ -22,21 +24,35 @@ interface UserProfile {
   id: string
   name: string | null
   email: string
+  role: string | null
 }
 
 const statusConfig = {
   pending: { label: "Pending", color: "#f59e0b", bg: "#fef3c7" },
   confirmed: { label: "Confirmed", color: "#3b82f6", bg: "#dbeafe" },
   in_progress: { label: "In Progress", color: "#8b5cf6", bg: "#ede9fe" },
+  processing: { label: "Processing", color: "#10b981", bg: "#d1fae5" },
+  ready: { label: "Ready", color: "#06b6d4", bg: "#cffafe" },
   completed: { label: "Completed", color: "#10b981", bg: "#d1fae5" },
   cancelled: { label: "Cancelled", color: "#ef4444", bg: "#fee2e2" }
 }
+
+import Navbar from "@/app/components/Navbar"
+import { ToastContainer, ToastType } from "@/app/components/Toast"
+import OrderTimeline from "@/app/components/OrderTimeline"
+import Receipt from "@/app/components/Receipt"
+import ReviewModal from "@/app/components/ReviewModal"
 
 export default function OrdersPage() {
   const [user, setUser] = useState<UserProfile | null>(null)
   const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<string>("all")
+  const [selectedOrder, setSelectedOrder] = useState<Booking | null>(null)
+  const [showReceiptOrder, setShowReceiptOrder] = useState<Booking | null>(null)
+  const [reviewOrder, setReviewOrder] = useState<Booking | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [toasts, setToasts] = useState<{ id: string; message: string; type: ToastType }[]>([])
   const router = useRouter()
   const supabase = createClient()
 
@@ -64,17 +80,93 @@ export default function OrdersPage() {
     async function getUser() {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
+        // Fetch role from profiles
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .single()
+
         setUser({
           id: user.id,
           name: user.user_metadata?.name || null,
-          email: user.email || ""
+          email: user.email || "",
+          role: profile?.role || 'user'
         })
         await fetchBookings(user.id)
       }
       setLoading(false)
     }
     getUser()
-  }, [supabase.auth, fetchBookings])
+
+    // Real-time subscription for status updates
+    const channel = supabase
+      .channel('booking-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'bookings',
+          filter: user ? `user_id=eq.${user.id}` : undefined
+        },
+        (payload) => {
+          console.log('Real-time update received:', payload)
+          setBookings(prev => prev.map(booking => 
+            booking.id === payload.new.id ? { ...booking, ...payload.new } : booking
+          ))
+          
+          if (selectedOrder?.id === payload.new.id) {
+            setSelectedOrder(payload.new as Booking)
+          }
+          
+          addToast(`Order status updated to ${payload.new.status}!`, "info")
+          
+          // Auto-show review modal for newly completed orders
+          if (payload.new.status === 'completed') {
+            setTimeout(() => checkForUnreviewedOrders(), 1000)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [supabase, fetchBookings, user?.id, selectedOrder?.id])
+
+  const addToast = (message: string, type: ToastType = "info") => {
+    const id = Date.now().toString()
+    setToasts((prev) => [...prev, { id, message, type }])
+    setTimeout(() => removeToast(id), 5000)
+  }
+
+  const removeToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }
+
+  const checkForUnreviewedOrders = useCallback(async () => {
+    if (!user) return
+    const completedOrders = bookings.filter(b => b.status === 'completed')
+    if (!completedOrders.length) return
+
+    // Check if any completed order lacks a review
+    const { data: existingReviews } = await supabase
+      .from('reviews')
+      .select('order_id')
+      .eq('user_id', user.id)
+      .in('order_id', completedOrders.map(o => o.id))
+
+    const reviewedIds = new Set((existingReviews || []).map((r: any) => r.order_id))
+    const unreviewed = completedOrders.find(o => !reviewedIds.has(o.id))
+    if (unreviewed) setReviewOrder(unreviewed)
+  }, [user, bookings, supabase])
+
+  useEffect(() => {
+    if (bookings.length > 0 && user) {
+      checkForUnreviewedOrders()
+    }
+  }, [bookings, user, checkForUnreviewedOrders])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -92,8 +184,9 @@ export default function OrdersPage() {
 
     if (error) {
       console.error("Error cancelling booking:", error)
-      alert("Failed to cancel booking")
+      addToast("Failed to cancel booking", "error")
     } else {
+      addToast("Order cancelled successfully", "info")
       if (user) {
         fetchBookings(user.id)
       }
@@ -119,112 +212,118 @@ export default function OrdersPage() {
 
   if (loading) {
     return (
-      <div className="loading-screen">
-        <div className="loader"></div>
-        <p>Loading orders...</p>
+      <div className="home-root" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="spinner" style={{ width: '40px', height: '40px' }}></div>
       </div>
     )
   }
 
   return (
-    <div className="orders-page">
-      {/* Navigation */}
-      <nav className="main-nav">
-        <div className="nav-container">
-          <div className="logo-container">
-            <svg viewBox="0 0 40 40" className="logo-icon">
-              <circle cx="20" cy="20" r="18" fill="none" stroke="currentColor" strokeWidth="2"/>
-              <path d="M12 20 Q20 10 28 20 Q20 30 12 20" fill="currentColor"/>
-            </svg>
-            <span className="brand-name">FreshPress</span>
-          </div>
-          
-          <div className="nav-links">
-            <Link href="/home" className="nav-link">Home</Link>
-            <Link href="/orders" className="nav-link active">My Orders</Link>
-          </div>
-          
-          <div className="nav-user">
-            <span className="user-greeting">Hello, {user?.name?.split(" ")[0] || "User"}</span>
-            <button onClick={handleLogout} className="logout-btn">
-              <svg viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1V4a1 1 0 00-1-1H3zm11 4.414l-4.293 4.293a1 1 0 01-1.414-1.414L11.586 7H7a1 1 0 110-2h6a1 1 0 011 1v6a1 1 0 11-2 0V7.414z" clipRule="evenodd"/>
-              </svg>
-              Logout
-            </button>
-          </div>
-        </div>
-      </nav>
+    <div className="home-root">
+      <Navbar user={user} />
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
 
-      {/* Orders Content */}
-      <main className="orders-content">
-        <div className="orders-header">
+      <main className="orders-content" style={{ padding: '120px 48px 60px', maxWidth: '1200px', margin: '0 auto' }}>
+        <div className="orders-header" style={{ marginBottom: '40px' }}>
           <div className="header-text">
-            <h1>My Orders</h1>
-            <p>Track and manage your laundry bookings</p>
+            <h1 style={{ fontSize: '2.5rem', fontWeight: 900, marginBottom: '8px' }}>My Orders</h1>
+            <p style={{ color: 'rgba(238,242,255,.55)' }}>Track and manage your premium laundry bookings</p>
           </div>
-          <Link href="/home" className="new-order-btn">
-            <svg viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd"/>
-            </svg>
+          <Link href="/home" className="btn-primary" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '12px 24px', borderRadius: '14px' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             New Booking
           </Link>
         </div>
 
         {/* Filter Tabs */}
-        <div className="filter-tabs">
-          <button 
-            className={`filter-tab ${filter === "all" ? "active" : ""}`}
-            onClick={() => setFilter("all")}
-          >
-            All Orders
-          </button>
-          <button 
-            className={`filter-tab ${filter === "pending" ? "active" : ""}`}
-            onClick={() => setFilter("pending")}
-          >
-            Pending
-          </button>
-          <button 
-            className={`filter-tab ${filter === "in_progress" ? "active" : ""}`}
-            onClick={() => setFilter("in_progress")}
-          >
-            In Progress
-          </button>
-          <button 
-            className={`filter-tab ${filter === "completed" ? "active" : ""}`}
-            onClick={() => setFilter("completed")}
-          >
-            Completed
-          </button>
+        <div className="filter-tabs" style={{ display: 'flex', gap: '12px', marginBottom: '32px', overflowX: 'auto', paddingBottom: '12px' }}>
+          {["all", "pending", "in_progress", "completed", "cancelled"].map((f) => (
+            <button 
+              key={f}
+              className={`filter-tab ${filter === f ? "active" : ""}`}
+              onClick={() => setFilter(f)}
+              style={{
+                padding: '10px 20px',
+                borderRadius: '40px',
+                border: '1px solid rgba(255,255,255,.1)',
+                background: filter === f ? 'rgba(245,200,66,.15)' : 'rgba(255,255,255,.05)',
+                color: filter === f ? '#f5c842' : 'rgba(238,242,255,.6)',
+                fontWeight: 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'all .2s'
+              }}
+            >
+              {f.charAt(0).toUpperCase() + f.slice(1).replace('_', ' ')}
+            </button>
+          ))}
+        </div>
+
+        {/* Search Bar */}
+        <div style={{ marginBottom: '24px', position: 'relative' }}>
+          <input
+            type="text"
+            placeholder="🔍  Search by service, status, address..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '14px 20px',
+              borderRadius: '16px',
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              color: 'white',
+              fontSize: '0.95rem',
+              outline: 'none',
+              boxSizing: 'border-box',
+              transition: 'border-color 0.2s',
+            }}
+            onFocus={e => (e.target.style.borderColor = 'rgba(245,200,66,0.4)')}
+            onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.1)')}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              style={{ position: 'absolute', right: '16px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: '1rem' }}
+            >✕</button>
+          )}
         </div>
 
         {/* Orders List */}
-        <div className="orders-list">
-          {bookings.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                </svg>
-              </div>
-              <h3>No orders yet</h3>
-              <p>Book your first laundry service to see it here</p>
-              <Link href="/home" className="book-now-btn">
-                Book Now
-              </Link>
-            </div>
-          ) : (
-            bookings.map((booking) => {
+        {(() => {
+          const lq = searchQuery.toLowerCase()
+          const filtered = bookings.filter(b =>
+            !lq ||
+            b.service_name?.toLowerCase().includes(lq) ||
+            b.status?.toLowerCase().includes(lq) ||
+            b.address?.toLowerCase().includes(lq) ||
+            b.pickup_date?.toLowerCase().includes(lq)
+          )
+          return (
+            <div className="orders-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '24px' }}>
+              {filtered.length === 0 ? (
+                <div className="empty-state glass" style={{ gridColumn: '1/-1', textAlign: 'center', padding: '80px', borderRadius: '32px', border: '1px dashed rgba(255,255,255,0.1)' }}>
+                  <div style={{ marginBottom: '24px', opacity: 0.5 }}>
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--accent-gold)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                  </div>
+                  <h3 style={{ fontSize: '1.6rem', fontWeight: 900, marginBottom: '12px', color: 'var(--text-primary)' }}>{searchQuery ? `No results for "${searchQuery}"` : 'No orders found'}</h3>
+                  <p style={{ color: 'var(--text-muted)', marginBottom: '32px', fontSize: '1rem' }}>{searchQuery ? 'Try a different search term or check your spelling.' : "Your laundry basket is empty! Ready to start a fresh wash?"}</p>
+                  {!searchQuery && <Link href="/home" className="btn-primary" style={{ textDecoration: 'none', padding: '14px 40px', borderRadius: '16px' }}>Start My First Order</Link>}
+                </div>
+              ) : (
+                filtered.map((booking) => {
               const status = statusConfig[booking.status]
               return (
-                <div key={booking.id} className="order-card">
-                  <div className="order-header">
-                    <div className="order-service">
-                      <h3>{booking.service_name}</h3>
+                <div key={booking.id} className="order-card glass" style={{ padding: '24px', borderRadius: '20px', border: '1px solid rgba(255,255,255,.08)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '6px' }}>{booking.service_name}</h3>
                       <span 
-                        className="order-status"
                         style={{ 
+                          padding: '4px 12px',
+                          borderRadius: '40px',
+                          fontSize: '.75rem',
+                          fontWeight: 700,
                           color: status.color, 
                           backgroundColor: status.bg 
                         }}
@@ -232,57 +331,247 @@ export default function OrdersPage() {
                         {status.label}
                       </span>
                     </div>
-                    <div className="order-price">
-                      ${booking.price.toFixed(2)}/lb
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f5c842' }}>
+                      ₹{booking.price.toFixed(2)}/kg
                     </div>
                   </div>
                   
-                  <div className="order-details">
-                    <div className="detail-item">
-                      <svg viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd"/>
-                      </svg>
-                      <span>{formatDate(booking.pickup_date)}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '.9rem', color: 'var(--text-secondary)' }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6 }}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                      {formatDate(booking.pickup_date)}
                     </div>
-                    <div className="detail-item">
-                      <svg viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd"/>
-                      </svg>
-                      <span>{formatTime(booking.pickup_time)}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '.9rem', color: 'var(--text-secondary)' }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6 }}><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                      {booking.pickup_time ? formatTime(booking.pickup_time) : "TBD"}
                     </div>
-                    <div className="detail-item address">
-                      <svg viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
-                      </svg>
-                      <span>{booking.address}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '.9rem', color: 'var(--text-secondary)' }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{booking.address}</span>
                     </div>
                   </div>
                   
                   {booking.instructions && (
-                    <div className="order-instructions">
-                      <strong>Instructions:</strong> {booking.instructions}
+                    <div style={{ padding: '12px', borderRadius: '10px', background: 'rgba(255,255,255,.03)', fontSize: '.85rem', color: 'rgba(238,242,255,.5)' }}>
+                      <strong>Note:</strong> {booking.instructions}
                     </div>
                   )}
+
+                  <OrderTimeline status={booking.status} />
                   
-                  <div className="order-footer">
-                    <span className="order-date">
-                      Booked on {formatDate(booking.created_at)}
+                  <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '.75rem', color: 'rgba(238,242,255,.3)' }}>
+                      Ref: #{booking.id.slice(0,8).toUpperCase()}
                     </span>
-                    {(booking.status === "pending" || booking.status === "confirmed") && (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      {(booking.status === "pending" || booking.status === "confirmed") && (
+                        <button 
+                          className="btn-ghost"
+                          onClick={() => handleCancelBooking(booking.id)}
+                          style={{ padding: '6px 14px', fontSize: '.8rem', color: '#f87171', borderColor: 'rgba(239,68,68,.2)' }}
+                        >
+                          Cancel
+                        </button>
+                      )}
+                      {booking.status === "completed" && (
+                        <button 
+                          className="btn-ghost"
+                          onClick={() => setShowReceiptOrder(booking)}
+                          style={{ padding: '8px 16px', fontSize: '.8rem', color: 'var(--accent-gold)', borderColor: 'rgba(245,200,66,.2)', gap: '8px' }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"></path><path d="M16 8h-6"></path><path d="M16 12H8"></path><path d="M13 16H8"></path></svg>
+                          Receipt
+                        </button>
+                      )}
                       <button 
-                        className="cancel-btn"
-                        onClick={() => handleCancelBooking(booking.id)}
+                        className="btn-primary"
+                        onClick={() => setSelectedOrder(booking)}
+                        style={{ padding: '6px 14px', fontSize: '.8rem', boxShadow: 'none' }}
                       >
-                        Cancel Order
+                        Track
                       </button>
-                    )}
+                    </div>
                   </div>
                 </div>
               )
             })
           )}
-        </div>
+            </div>
+          )
+        })()}
       </main>
+
+      {/* Receipt Modal */}
+      {showReceiptOrder && (
+        <div className="modal-backdrop" onClick={() => setShowReceiptOrder(null)} style={{ zIndex: 2000 }}>
+          <div 
+            className="modal-box no-bg" 
+            onClick={e => e.stopPropagation()} 
+            style={{ 
+              maxWidth: '550px', 
+              background: 'transparent',
+              padding: 0,
+              boxShadow: 'none',
+              position: 'relative'
+            }}
+          >
+            <div style={{ position: 'absolute', right: '10px', top: '10px', zIndex: 2001 }}>
+              <button 
+                className="modal-close no-print" 
+                onClick={() => setShowReceiptOrder(null)}
+                style={{ background: '#f5c842', color: '#07071a', width: '30px', height: '30px', borderRadius: '50%', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}
+              >✕</button>
+            </div>
+            <Receipt order={{
+              ...showReceiptOrder,
+              customer_name: user?.name || user?.email || 'Guest User'
+            }} />
+          </div>
+        </div>
+      )}
+
+      {/* Order Tracking Modal */}
+      {selectedOrder && (
+        <div className="modal-backdrop" onClick={() => setSelectedOrder(null)}>
+          <div className="modal-box glass" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <div className="modal-header">
+              <h2 className="modal-title">Live Tracking</h2>
+              <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', marginRight: '16px' }}>
+                <button 
+                  onClick={() => user && fetchBookings(user.id)} 
+                  className="btn-ghost" 
+                  style={{ padding: '8px 16px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '8px', borderRadius: '10px' }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path><polyline points="21 3 21 8 16 8"></polyline></svg>
+                  Refresh
+                </button>
+              </div>
+              <button className="modal-close" onClick={() => setSelectedOrder(null)}>✕</button>
+            </div>
+            
+            <div className="order-summary" style={{ marginBottom: '30px', padding: '0 10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.4rem', fontWeight: 900, color: 'white' }}>{selectedOrder.service_name}</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                    <span 
+                      style={{ 
+                        padding: '2px 10px', 
+                        borderRadius: '20px', 
+                        fontSize: '0.7rem', 
+                        fontWeight: 700,
+                        background: statusConfig[selectedOrder.status].bg,
+                        color: statusConfig[selectedOrder.status].color
+                      }}
+                    >
+                      {statusConfig[selectedOrder.status].label}
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: 'rgba(238,242,255,0.4)' }}>#{selectedOrder.id.slice(0,8).toUpperCase()}</span>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '1.6rem', fontWeight: 950, color: '#f5c842' }}>₹{selectedOrder.price.toFixed(2)}</div>
+                  <span style={{ fontSize: '0.75rem', color: 'rgba(238,242,255,0.4)' }}>Total Estimate</span>
+                </div>
+              </div>
+              
+              <OrderTimeline status={selectedOrder.status} />
+            </div>
+
+            <div className="tracking-timeline glass" style={{ padding: '24px', borderRadius: '20px', marginBottom: '24px', background: 'rgba(255,255,255,0.02)' }}>
+              <h4 style={{ fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(238,242,255,0.4)', marginBottom: '16px' }}>Estimated Timeline</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', gap: '12px', position: 'relative' }}>
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f5c842', marginTop: '6px', zIndex: 1 }}></div>
+                  <div style={{ position: 'absolute', left: '3px', top: '14px', bottom: '-16px', width: '2px', background: 'rgba(245,200,66,0.2)' }}></div>
+                  <div>
+                    <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>Pickup Scheduled</div>
+                    <div style={{ fontSize: '0.8rem', color: 'rgba(238,242,255,0.5)' }}>{formatDate(selectedOrder.pickup_date)} at {selectedOrder.pickup_time ? formatTime(selectedOrder.pickup_time) : "TBD"}</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', marginTop: '6px' }}></div>
+                  <div>
+                    <div style={{ fontSize: '0.9rem', fontWeight: 700, opacity: 0.5 }}>Estimated Delivery</div>
+                    <div style={{ fontSize: '0.8rem', color: 'rgba(238,242,255,0.3)' }}>Usually within 24-48 hours after pickup</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="order-details-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="glass" style={{ padding: '16px', borderRadius: '16px' }}>
+                <h4 style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'rgba(238,242,255,0.4)', marginBottom: '8px' }}>Pickup Location</h4>
+                <div style={{ fontSize: '0.85rem', color: 'white', lineHeight: 1.4 }}>📍 {selectedOrder.address}</div>
+              </div>
+              <div className="glass" style={{ padding: '16px', borderRadius: '16px' }}>
+                <h4 style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'rgba(238,242,255,0.4)', marginBottom: '8px' }}>Security Note</h4>
+                <div style={{ fontSize: '0.8rem', color: 'rgba(238,242,255,0.6)', lineHeight: 1.4 }}>Verified Partner Pickup. Check for FreshPress ID.</div>
+              </div>
+              {selectedOrder.instructions && (
+                <div className="glass" style={{ gridColumn: '1 / span 2', padding: '16px', borderRadius: '16px' }}>
+                  <h4 style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'rgba(238,242,255,0.4)', marginBottom: '8px' }}>Your Instructions</h4>
+                  <p style={{ fontSize: '0.85rem', color: 'rgba(238,242,255,0.7)', fontStyle: 'italic' }}>"{selectedOrder.instructions}"</p>
+                </div>
+              )}
+            </div>
+
+            {(selectedOrder.before_photo_url || selectedOrder.after_photo_url) && (
+              <div className="glass" style={{ marginTop: '24px', padding: '24px', borderRadius: '20px', border: '1px solid rgba(16,185,129,0.2)' }}>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#10b981', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                  Service Quality Proof
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  {selectedOrder.before_photo_url && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <p style={{ fontSize: '0.7rem', opacity: 0.5 }}>BEFORE PROCESSING</p>
+                      <img 
+                        src={selectedOrder.before_photo_url} 
+                        alt="Before Processing" 
+                        style={{ width: '100%', height: '120px', objectFit: 'cover', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}
+                      />
+                    </div>
+                  )}
+                  {selectedOrder.after_photo_url && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <p style={{ fontSize: '0.7rem', opacity: 0.5 }}>AFTER PROCESSING</p>
+                      <img 
+                        src={selectedOrder.after_photo_url} 
+                        alt="After Processing" 
+                        style={{ width: '100%', height: '120px', objectFit: 'cover', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <button 
+              className="btn-primary" 
+              style={{ width: '100%', marginTop: '30px' }}
+              onClick={() => setSelectedOrder(null)}
+            >
+              Close Details
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Review Modal */}
+      {reviewOrder && user && (
+        <ReviewModal
+          orderId={reviewOrder.id}
+          serviceName={reviewOrder.service_name}
+          userId={user.id}
+          userName={user.name || user.email}
+          onClose={() => setReviewOrder(null)}
+          onSubmitted={() => {
+            setReviewOrder(null)
+            addToast("Review submitted! Thank you 🎉", "success")
+          }}
+        />
+      )}
     </div>
   )
 }

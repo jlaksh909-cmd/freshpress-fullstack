@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from 'next'
+import ChatSupport from "./components/ChatSupport"
+import MobileBottomNav from "./components/MobileBottomNav"
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -18,8 +20,28 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var savedTheme = localStorage.getItem('theme');
+                  var theme = savedTheme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+                  document.documentElement.setAttribute('data-theme', theme);
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
+        <link rel="manifest" href="/manifest.json" />
+      </head>
+      <body>
+        <main>{children}</main>
+        <ChatSupport />
+        <MobileBottomNav />
+      </body>
     </html>
   )
 }
