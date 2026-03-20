@@ -26,6 +26,7 @@ export default function ProfilePage() {
   const [toasts, setToasts] = useState<{ id: string; message: string; type: ToastType }[]>([])
   const [points, setPoints] = useState({ balance: 0, lifetime_earned: 0 })
   const [pointsHistory, setPointsHistory] = useState<any[]>([])
+  const [referralStats, setReferralStats] = useState({ friendsJoined: 0, pendingWash: 0, earnedBonus: 0 })
   const router = useRouter()
   const supabase = createClient()
 
@@ -68,8 +69,15 @@ export default function ProfilePage() {
       if (error) {
         addToast("Error fetching profile", "error")
       } else {
+        let profileData = data
+        if (!profileData.referral_code) {
+          const newCode = `FP-${Math.random().toString(36).substring(2, 7).toUpperCase()}`
+          const { data: updated } = await supabase.from('profiles').update({ referral_code: newCode }).eq('id', user.id).select().single()
+          if (updated) profileData = updated
+        }
+
         setProfile({
-          ...data,
+          ...profileData,
           email: user.email || ""
         })
         fetchAddresses(user.id)
@@ -85,6 +93,17 @@ export default function ProfilePage() {
           .eq("user_id", user.id)
           .order("created_at", { ascending: false })
         if (hist) setPointsHistory(hist)
+
+        // Fetch Referral Stats
+        const { count: joinedCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('referred_by', user.id)
+        const referralBonuses = hist?.filter(h => h.description?.toLowerCase().includes('referral')) || []
+        const totalBonus = referralBonuses.reduce((sum, h) => sum + h.amount, 0)
+        
+        setReferralStats({
+          friendsJoined: joinedCount || 0,
+          pendingWash: Math.max(0, (joinedCount || 0) - referralBonuses.length),
+          earnedBonus: totalBonus
+        })
       }
       setLoading(false)
     }
@@ -249,52 +268,87 @@ export default function ProfilePage() {
           </div>
         </motion.div>
 
-        {/* Referral Card */}
+        {/* Elite Referral Invite Card */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
+          initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
           className="glass"
           style={{ 
-            padding: '32px', 
+            padding: '40px', 
             borderRadius: '32px', 
             marginBottom: '32px', 
-            background: 'linear-gradient(135deg, rgba(245,200,66,0.1) 0%, rgba(255,255,255,0.02) 100%)',
-            border: '1px solid rgba(245,200,66,0.2)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: '24px'
+            background: 'linear-gradient(135deg, rgba(245,200,66,0.12) 0%, rgba(255,255,255,0.03) 100%)',
+            border: '1px solid rgba(245,200,66,0.25)',
+            position: 'relative',
+            overflow: 'hidden'
           }}
         >
-          <div style={{ flex: 1 }}>
-            <h3 style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--accent-gold)', marginBottom: '8px' }}>Invite Friends, Get 500 Pts! 🎁</h3>
-            <p style={{ color: 'rgba(238,242,255,0.7)', fontSize: '0.9rem', lineHeight: 1.5 }}>
-              Share your referral code with friends. When they sign up, they get 200 pts and you get 500 pts after their first wash!
-            </p>
-          </div>
-          <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-end' }}>
-            <div style={{ 
-              background: 'rgba(255,255,255,0.05)', 
-              padding: '12px 24px', 
-              borderRadius: '16px', 
-              border: '1px dashed rgba(245,200,66,0.5)',
-              fontSize: '1.2rem',
-              fontWeight: 900,
-              letterSpacing: '2px',
-              color: 'white'
-            }}>
-              {profile.referral_code || "GEN-ERING..."}
+          {/* Background Decorative Circles */}
+          <div style={{ position: 'absolute', top: '-10%', right: '-5%', width: '150px', height: '150px', background: 'var(--accent-gold)', opacity: 0.05, filter: 'blur(50px)', borderRadius: '50%' }}></div>
+          <div style={{ position: 'absolute', bottom: '-10%', left: '-5%', width: '100px', height: '100px', background: 'var(--accent-blue)', opacity: 0.05, filter: 'blur(40px)', borderRadius: '50%' }}></div>
+
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+              <div>
+                <span style={{ fontSize: '0.75rem', fontWeight: 900, background: 'rgba(245,200,66,0.2)', color: 'var(--accent-gold)', padding: '6px 12px', borderRadius: '40px', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '16px', display: 'inline-block' }}>
+                  Premium Invite program
+                </span>
+                <h3 style={{ fontSize: '1.8rem', fontWeight: 950, color: 'white', marginBottom: '8px', lineHeight: 1.2 }}>
+                  Share the Excellence, <br/>Earn <span style={{ color: 'var(--accent-gold)' }}>500 Pts</span> 🎁
+                </h3>
+                <p style={{ color: 'rgba(238,242,255,0.6)', fontSize: '0.95rem', maxWidth: '380px', lineHeight: 1.5 }}>
+                  Give friends 200 pts to start. Get 500 pts when they complete their first elite clean.
+                </p>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '2rem', fontWeight: 950, color: 'var(--accent-gold)' }}>500</div>
+                <div style={{ fontSize: '0.7rem', opacity: 0.5, fontWeight: 700 }}>PTS PER REFERRAL</div>
+              </div>
             </div>
-            <button 
-              onClick={() => {
-                navigator.clipboard.writeText(profile.referral_code || "")
-                addToast("Referral code copied!", "success")
-              }}
-              className="btn-ghost" 
-              style={{ padding: '8px 20px', borderRadius: '12px', fontSize: '0.8rem', color: 'var(--accent-gold)', borderColor: 'rgba(245,200,66,0.3)' }}
-            >
-              Copy Code
-            </button>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '32px' }}>
+              <div className="glass" style={{ padding: '16px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <p style={{ fontSize: '0.65rem', opacity: 0.5, marginBottom: '4px' }}>FRIENDS JOINED</p>
+                <p style={{ fontSize: '1.2rem', fontWeight: 900 }}>{referralStats.friendsJoined}</p>
+              </div>
+              <div className="glass" style={{ padding: '16px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <p style={{ fontSize: '0.65rem', opacity: 0.5, marginBottom: '4px' }}>PENDING BONUS</p>
+                <p style={{ fontSize: '1.2rem', fontWeight: 900, color: '#f59e0b' }}>{referralStats.pendingWash}</p>
+              </div>
+              <div className="glass" style={{ padding: '16px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <p style={{ fontSize: '0.65rem', opacity: 0.5, marginBottom: '4px' }}>TOTAL EARNED</p>
+                <p style={{ fontSize: '1.2rem', fontWeight: 900, color: '#10b981' }}>{referralStats.earnedBonus}</p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <div style={{ 
+                flex: 1,
+                background: 'rgba(0,0,0,0.2)', 
+                padding: '16px 24px', 
+                borderRadius: '16px', 
+                border: '1.5px dashed rgba(245,200,66,0.3)',
+                fontSize: '1.3rem',
+                fontWeight: 950,
+                letterSpacing: '3px',
+                color: 'white',
+                display: 'flex',
+                justifyContent: 'center',
+                boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.2)'
+              }}>
+                {profile.referral_code || "GEN-ERING..."}
+              </div>
+              <button 
+                onClick={() => {
+                  navigator.clipboard.writeText(profile.referral_code || "")
+                  addToast("Referral code copied!", "success")
+                }}
+                className="btn-primary" 
+                style={{ padding: '16px 32px', borderRadius: '16px', fontSize: '0.9rem', boxShadow: '0 10px 20px rgba(245,200,66,0.2)' }}
+              >
+                Copy My Code
+              </button>
+            </div>
           </div>
         </motion.div>
 

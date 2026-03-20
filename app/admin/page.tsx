@@ -10,6 +10,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import Navbar from "@/app/components/Navbar"
 import { ToastContainer, ToastType } from "@/app/components/Toast"
+import PhotoUpload from "@/app/components/PhotoUpload"
 
 interface Booking {
   id: string
@@ -23,6 +24,8 @@ interface Booking {
   pickup_time: string | null
   status: string
   created_at: string
+  before_photo_url?: string | null
+  after_photo_url?: string | null
 }
 
 const statusOptions = [
@@ -63,6 +66,7 @@ export default function AdminDashboard() {
   const [coupons, setCoupons] = useState<any[]>([])
   const [newCoupon, setNewCoupon] = useState({ code: '', discount_type: 'percent', discount_value: 10, min_order_value: 0, expiry_date: '', max_uses: 100 })
   const [showCouponForm, setShowCouponForm] = useState(false)
+  const [photoEditingOrder, setPhotoEditingOrder] = useState<Booking | null>(null)
   const [notifications, setNotifications] = useState<any[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [showBroadcastForm, setShowBroadcastForm] = useState(false)
@@ -284,6 +288,30 @@ export default function AdminDashboard() {
         const { data } = await supabase.from("bookings").select("price").filter("status", "eq", "completed")
         const newRev = data?.reduce((acc, curr) => acc + (curr.price || 0), 0) || 0
         setStats(prev => ({ ...prev, revenue: newRev }))
+
+        // Referral Logic: Award points on first wash completion
+        const booking = bookings.find(b => b.id === id)
+        if (booking) {
+          // Check if user has other completed bookings
+          const { count } = await supabase.from('bookings').select('*', { count: 'exact', head: true }).eq('user_id', booking.user_id).eq('status', 'completed')
+          if (count === 1) { // This was their first one!
+            const { data: profile } = await supabase.from('profiles').select('referred_by').eq('id', booking.user_id).single()
+            if (profile?.referred_by) {
+              // Award 500 points to referrer
+              const { data: referrerPoints } = await supabase.from('user_points').select('balance').eq('user_id', profile.referred_by).single()
+              const newBalance = (referrerPoints?.balance || 0) + 500
+              await supabase.from('user_points').upsert({ user_id: profile.referred_by, balance: newBalance, updated_at: new Date().toISOString() })
+              await supabase.from('points_history').insert({
+                user_id: profile.referred_by,
+                amount: 500,
+                transaction_type: 'earned',
+                description: `Referral bonus: Friend's first wash completion!`,
+                order_id: id
+              })
+              addToast("Referral bonus awarded to referrer!", "success")
+            }
+          }
+        }
       }
     }
     setUpdatingId(null)
@@ -578,17 +606,27 @@ export default function AdminDashboard() {
                         </span>
                       </td>
                       <td>
-                        <select 
-                          className="glass"
-                          style={{ padding: '8px 12px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 700, background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer' }}
-                          value={booking.status}
-                          disabled={updatingId === booking.id}
-                          onChange={(e) => handleStatusUpdate(booking.id, e.target.value)}
-                        >
-                          {statusOptions.map(opt => (
-                            <option key={opt.value} value={opt.value} style={{ background: '#07071a' }}>{opt.label}</option>
-                          ))}
-                        </select>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <select 
+                            className="glass"
+                            style={{ padding: '8px 12px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 700, background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', flex: 1 }}
+                            value={booking.status}
+                            disabled={updatingId === booking.id}
+                            onChange={(e) => handleStatusUpdate(booking.id, e.target.value)}
+                          >
+                            {statusOptions.map(opt => (
+                              <option key={opt.value} value={opt.value} style={{ background: '#07071a' }}>{opt.label}</option>
+                            ))}
+                          </select>
+                          <button 
+                            onClick={() => setPhotoEditingOrder(booking)}
+                            className="btn-ghost"
+                            style={{ padding: '8px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderColor: (booking.before_photo_url || booking.after_photo_url) ? '#10b981' : 'rgba(255,255,255,0.1)' }}
+                            title="Service Photos"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={(booking.before_photo_url || booking.after_photo_url) ? '#10b981' : 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -963,6 +1001,56 @@ export default function AdminDashboard() {
         .admin-tr:hover { background: rgba(255,255,255,0.02); }
         .admin-tr td { transition: background 0.2s; }
       `}</style>
+    {/* Photo Upload Modal */}
+    {photoEditingOrder && (
+      <div className="modal-overlay">
+        <motion.div 
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="modal-container glass" 
+          style={{ maxWidth: '500px', padding: '32px' }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <div>
+              <h2 style={{ fontSize: '1.4rem', fontWeight: 900 }}>Service Quality Proof</h2>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Order #{photoEditingOrder.id.slice(0,8).toUpperCase()}</p>
+            </div>
+            <button onClick={() => setPhotoEditingOrder(null)} className="btn-ghost" style={{ padding: '8px', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '32px' }}>
+            <PhotoUpload 
+              label="Before Wash" 
+              currentUrl={photoEditingOrder.before_photo_url}
+              onUpload={async (url: string) => {
+                const { error } = await supabase.from('bookings').update({ before_photo_url: url }).eq('id', photoEditingOrder.id)
+                if (!error) {
+                  setBookings(prev => prev.map(b => b.id === photoEditingOrder.id ? { ...b, before_photo_url: url } : b))
+                }
+              }}
+            />
+            <PhotoUpload 
+              label="After Wash" 
+              currentUrl={photoEditingOrder.after_photo_url}
+              onUpload={async (url: string) => {
+                const { error } = await supabase.from('bookings').update({ after_photo_url: url }).eq('id', photoEditingOrder.id)
+                if (!error) {
+                  setBookings(prev => prev.map(b => b.id === photoEditingOrder.id ? { ...b, after_photo_url: url } : b))
+                }
+              }}
+            />
+          </div>
+
+          <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)', marginBottom: '24px' }}>
+            <p style={{ fontSize: '0.85rem', color: '#4fc3f7', lineHeight: 1.5 }}>
+              <strong>Elite Tip:</strong> Quality photos are visible to the customer on their live tracking page. This builds trust!
+            </p>
+          </div>
+
+          <button onClick={() => setPhotoEditingOrder(null)} className="btn-primary" style={{ width: '100%' }}>Done</button>
+        </motion.div>
+      </div>
+    )}
     </div>
   )
 }
