@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { motion } from "framer-motion"
@@ -13,8 +13,18 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
   const [toasts, setToasts] = useState<{ id: string; message: string; type: ToastType }[]>([])
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
+  
   const router = useRouter()
   const supabase = createClient()
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      setMousePos({ x: e.clientX, y: e.clientY })
+    }
+    window.addEventListener("mousemove", handleMouseMove)
+    return () => window.removeEventListener("mousemove", handleMouseMove)
+  }, [])
 
   const addToast = (message: string, type: ToastType = "info") => {
     const id = Date.now().toString()
@@ -68,11 +78,69 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="home-root login-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', position: 'relative' }}>
+    <div className="home-root login-container" style={{ 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      padding: '20px', 
+      position: 'relative',
+      overflow: 'hidden',
+      background: 'var(--bg-primary)'
+    }}>
       <div style={{ position: 'absolute', top: '24px', right: '24px', zIndex: 100 }}>
         <ThemeToggle />
       </div>
-      <div className="hero-bg-glow" style={{ top: '20%', left: '20%' }}></div>
+
+      {/* Interactive Iron Lamp Glow */}
+      <motion.div 
+        animate={{
+          x: mousePos.x - 250,
+          y: mousePos.y - 250,
+        }}
+        transition={{ type: "spring", damping: 30, stiffness: 200, mass: 0.5 }}
+        style={{
+          position: 'fixed',
+          width: '500px',
+          height: '500px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(245, 200, 66, 0.07) 0%, rgba(245, 200, 66, 0) 70%)',
+          pointerEvents: 'none',
+          zIndex: 1,
+          filter: 'blur(40px)',
+          mixBlendMode: 'screen'
+        }}
+      />
+
+      {/* Steam Particles */}
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 1 }}>
+        {[...Array(6)].map((_, i) => (
+          <motion.div
+            key={i}
+            initial={{ y: '110vh', x: `${20 + i * 15}%`, opacity: 0 }}
+            animate={{ 
+              y: '-20vh', 
+              opacity: [0, 0.2, 0],
+              x: `${20 + i * 15 + Math.sin(i) * 5}%` 
+            }}
+            transition={{ 
+              duration: 8 + Math.random() * 4, 
+              repeat: Infinity, 
+              delay: i * 1.5,
+              ease: "linear"
+            }}
+            style={{
+              position: 'absolute',
+              width: '100px',
+              height: '100px',
+              background: 'radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%)',
+              filter: 'blur(30px)',
+              borderRadius: '50%'
+            }}
+          />
+        ))}
+      </div>
+
+      <div className="hero-bg-glow" style={{ top: '20%', left: '20%', opacity: 0.3 }}></div>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
       
       <motion.div 
@@ -115,7 +183,7 @@ export default function LoginPage() {
           <div className="mform-group">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <label>Password</label>
-              <Link href="#" style={{ fontSize: '0.75rem', color: '#f5c842', textDecoration: 'none' }}>Forgot password?</Link>
+              <Link href="/forgot-password" style={{ fontSize: '0.75rem', color: '#f5c842', textDecoration: 'none' }}>Forgot password?</Link>
             </div>
             <input
               type="password"

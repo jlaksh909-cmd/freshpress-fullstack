@@ -245,7 +245,7 @@ export default function ProfilePage() {
                 borderRadius: '20px', 
                 fontSize: '0.7rem', 
                 fontWeight: 800,
-                background: profile.role === 'admin' ? '#ef444420' : profile.role === 'worker' ? '#3b82f620' : 'rgba(255,255,255,0.1)',
+                background: profile.role === 'admin' ? 'rgba(239, 68, 68, 0.15)' : profile.role === 'worker' ? 'rgba(59, 130, 246, 0.15)' : 'var(--glass-bg)',
                 color: profile.role === 'admin' ? '#ef4444' : profile.role === 'worker' ? '#3b82f6' : 'var(--text-muted)',
                 border: '1px solid currentColor',
                 textTransform: 'uppercase'
@@ -259,12 +259,25 @@ export default function ProfilePage() {
                 <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Available Balance</p>
                 <p style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--accent-gold)' }}>🌟 {points.balance} Pts</p>
               </div>
-              <div className="glass" style={{ padding: '8px 16px', borderRadius: '12px' }}>
-                <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Lifetime Earned</p>
-                <p style={{ fontSize: '1.2rem', fontWeight: 900 }}>🏆 {points.lifetime_earned}</p>
+              {/* Dynamic Membership Badge */}
+              <div className="glass" style={{ 
+                padding: '8px 16px', 
+                borderRadius: '12px', 
+                border: `1px solid ${points.lifetime_earned > 5000 ? '#e5e4e2' : points.lifetime_earned > 1000 ? '#ffd700' : '#c0c0c0'}`,
+                background: `linear-gradient(135deg, ${points.lifetime_earned > 5000 ? 'rgba(229, 228, 226, 0.1)' : points.lifetime_earned > 1000 ? 'rgba(255, 215, 0, 0.1)' : 'rgba(192, 192, 192, 0.1)'}, transparent)`
+              }}>
+                <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Membership Status</p>
+                <p style={{ 
+                  fontSize: '1.2rem', 
+                  fontWeight: 900, 
+                  color: points.lifetime_earned > 5000 ? '#e5e4e2' : points.lifetime_earned > 1000 ? '#ffd700' : '#c0c0c0',
+                  textShadow: '0 0 10px rgba(255,255,255,0.2)'
+                }}>
+                  {points.lifetime_earned > 5000 ? '💎 PLATINUM' : points.lifetime_earned > 1000 ? '✨ GOLD' : '🛡️ SILVER'}
+                </p>
               </div>
             </div>
-            <p style={{ fontSize: '0.8rem', opacity: 0.5, marginTop: '12px' }}>Member since {memberSince}</p>
+            <p style={{ fontSize: '0.8rem', opacity: 0.5, marginTop: '12px' }}>Member since {memberSince} • Total Earned: {points.lifetime_earned} Pts</p>
           </div>
         </motion.div>
 
@@ -277,8 +290,8 @@ export default function ProfilePage() {
             padding: '40px', 
             borderRadius: '32px', 
             marginBottom: '32px', 
-            background: 'linear-gradient(135deg, rgba(245,200,66,0.12) 0%, rgba(255,255,255,0.03) 100%)',
-            border: '1px solid rgba(245,200,66,0.25)',
+            background: 'var(--card-bg)',
+            border: '1px solid var(--accent-gold)',
             position: 'relative',
             overflow: 'hidden'
           }}
@@ -293,10 +306,10 @@ export default function ProfilePage() {
                 <span style={{ fontSize: '0.75rem', fontWeight: 900, background: 'rgba(245,200,66,0.2)', color: 'var(--accent-gold)', padding: '6px 12px', borderRadius: '40px', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '16px', display: 'inline-block' }}>
                   Premium Invite program
                 </span>
-                <h3 style={{ fontSize: '1.8rem', fontWeight: 950, color: 'white', marginBottom: '8px', lineHeight: 1.2 }}>
+                <h3 style={{ fontSize: '1.8rem', fontWeight: 950, color: 'var(--text-primary)', marginBottom: '8px', lineHeight: 1.2 }}>
                   Share the Excellence, <br/>Earn <span style={{ color: 'var(--accent-gold)' }}>500 Pts</span> 🎁
                 </h3>
-                <p style={{ color: 'rgba(238,242,255,0.6)', fontSize: '0.95rem', maxWidth: '380px', lineHeight: 1.5 }}>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', maxWidth: '380px', lineHeight: 1.5 }}>
                   Give friends 200 pts to start. Get 500 pts when they complete their first elite clean.
                 </p>
               </div>
@@ -307,16 +320,16 @@ export default function ProfilePage() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '32px' }}>
-              <div className="glass" style={{ padding: '16px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <p style={{ fontSize: '0.65rem', opacity: 0.5, marginBottom: '4px' }}>FRIENDS JOINED</p>
-                <p style={{ fontSize: '1.2rem', fontWeight: 900 }}>{referralStats.friendsJoined}</p>
+              <div className="glass" style={{ padding: '16px', borderRadius: '16px', border: '1px solid var(--glass-border)' }}>
+                <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '4px' }}>FRIENDS JOINED</p>
+                <p style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--text-primary)' }}>{referralStats.friendsJoined}</p>
               </div>
-              <div className="glass" style={{ padding: '16px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <p style={{ fontSize: '0.65rem', opacity: 0.5, marginBottom: '4px' }}>PENDING BONUS</p>
+              <div className="glass" style={{ padding: '16px', borderRadius: '16px', border: '1px solid var(--glass-border)' }}>
+                <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '4px' }}>PENDING BONUS</p>
                 <p style={{ fontSize: '1.2rem', fontWeight: 900, color: '#f59e0b' }}>{referralStats.pendingWash}</p>
               </div>
-              <div className="glass" style={{ padding: '16px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <p style={{ fontSize: '0.65rem', opacity: 0.5, marginBottom: '4px' }}>TOTAL EARNED</p>
+              <div className="glass" style={{ padding: '16px', borderRadius: '16px', border: '1px solid var(--glass-border)' }}>
+                <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '4px' }}>TOTAL EARNED</p>
                 <p style={{ fontSize: '1.2rem', fontWeight: 900, color: '#10b981' }}>{referralStats.earnedBonus}</p>
               </div>
             </div>
@@ -324,17 +337,17 @@ export default function ProfilePage() {
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
               <div style={{ 
                 flex: 1,
-                background: 'rgba(0,0,0,0.2)', 
+                background: 'var(--card-bg)', 
                 padding: '16px 24px', 
                 borderRadius: '16px', 
-                border: '1.5px dashed rgba(245,200,66,0.3)',
+                border: '1.5px dashed var(--accent-gold)',
                 fontSize: '1.3rem',
                 fontWeight: 950,
                 letterSpacing: '3px',
-                color: 'white',
+                color: 'var(--text-primary)',
                 display: 'flex',
                 justifyContent: 'center',
-                boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.2)'
+                boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.1)'
               }}>
                 {profile.referral_code || "GEN-ERING..."}
               </div>
@@ -349,19 +362,38 @@ export default function ProfilePage() {
                 Copy My Code
               </button>
             </div>
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
+              <button 
+                onClick={() => window.open(`https://wa.me/?text=Join FreshPress Laundry using my code ${profile.referral_code} and get 200 pts! ✨`, '_blank')}
+                className="btn-ghost" 
+                style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #25D366', color: '#25D366', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '0.8rem', fontWeight: 700 }}
+              >
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 6.172c-3.181 0-5.767 2.586-5.767 5.767 0 1.267.405 2.455 1.083 3.407l-1.147 4.174 4.301-1.127c.928.539 2.001.846 3.141.846a5.772 5.772 0 0 0 5.767-5.767 5.772 5.772 0 0 0-5.378-5.767v.461zm0 10.629c-1.032 0-2.008-.278-2.855-.772l-.204-.116-2.121.555.57-2.067-.13-.207c-.53-.846-.833-1.851-.833-2.922a4.85 4.85 0 0 1 4.85-4.85c2.674 0 4.85 2.176 4.85 4.85a4.853 4.853 0 0 1-4.85 4.85c-.087 0-.171-.004-.257-.012l-.02.89z"/></svg>
+                WhatsApp
+              </button>
+              <button 
+                onClick={() => window.open(`https://twitter.com/intent/tweet?text=Join FreshPress Laundry using my code ${profile.referral_code} for premium service! ✨`, '_blank')}
+                className="btn-ghost" 
+                style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #1DA1F2', color: '#1DA1F2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '0.8rem', fontWeight: 700 }}
+              >
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M24 4.557c-.883.392-1.832.656-2.828.775 1.017-.609 1.798-1.574 2.165-2.724-.951.564-2.005.974-3.127 1.195-.897-.957-2.178-1.555-3.594-1.555-3.179 0-5.515 2.966-4.797 6.045-4.091-.205-7.719-2.165-10.148-5.144-1.29 2.213-.669 5.108 1.523 6.574-.806-.026-1.566-.247-2.229-.616-.054 2.281 1.581 4.415 3.949 4.89-.693.188-1.452.232-2.224.084.626 1.956 2.444 3.379 4.6 3.419-2.07 1.623-4.678 2.348-7.29 2.04 2.179 1.397 4.768 2.212 7.548 2.212 9.142 0 14.307-7.721 13.995-14.646.962-.695 1.797-1.562 2.457-2.549z"/></svg>
+                Twitter
+              </button>
+            </div>
           </div>
         </motion.div>
 
         <div className="glass" style={{ padding: '40px', borderRadius: '32px', marginBottom: '32px' }}>
-          <h3 style={{ marginBottom: '24px', fontSize: '1.4rem', fontWeight: 800 }}>PressPoints History</h3>
+          <h3 style={{ marginBottom: '24px', fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>PressPoints History</h3>
           {pointsHistory.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No points history yet. Start ordering to earn points!</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {pointsHistory.map(h => (
-                <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--glass-border)' }}>
                   <div>
-                    <p style={{ fontSize: '0.95rem', fontWeight: 600 }}>{h.description}</p>
+                    <p style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)' }}>{h.description}</p>
                     <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{new Date(h.created_at).toLocaleDateString()}</p>
                   </div>
                   <div style={{ fontWeight: 900, fontSize: '1.1rem', color: h.amount > 0 ? '#10b981' : '#ef4444' }}>
@@ -420,7 +452,7 @@ export default function ProfilePage() {
             <select 
               value={newAddress.label}
               onChange={(e) => setNewAddress({...newAddress, label: e.target.value})}
-              style={{ width: '120px', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid rgba(255,255,255,0.1)' }}
+              style={{ width: '120px', padding: '12px', borderRadius: '12px', background: 'var(--card-bg)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)' }}
             >
               <option value="Home">Home</option>
               <option value="Office">Office</option>
@@ -445,17 +477,17 @@ export default function ProfilePage() {
                 style={{ 
                   padding: '20px', 
                   borderRadius: '20px', 
-                  border: addr.is_default ? '1px solid #f5c842' : '1px solid rgba(255,255,255,0.05)',
+                  border: addr.is_default ? '1px solid var(--accent-gold)' : '1px solid var(--glass-border)',
                   position: 'relative'
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ fontWeight: 800, color: '#f5c842', fontSize: '0.8rem', textTransform: 'uppercase' }}>{addr.label}</span>
+                  <span style={{ fontWeight: 800, color: 'var(--accent-gold)', fontSize: '0.8rem', textTransform: 'uppercase' }}>{addr.label}</span>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     {!addr.is_default && (
                       <button 
                         onClick={() => setDefaultAddress(addr.id)}
-                        style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: '0.7rem' }}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.7rem' }}
                       >
                         Set Default
                       </button>
@@ -468,8 +500,8 @@ export default function ProfilePage() {
                     </button>
                   </div>
                 </div>
-                <p style={{ fontSize: '0.9rem', lineHeight: 1.5 }}>{addr.address}</p>
-                {addr.is_default && <div style={{ fontSize: '0.65rem', color: '#f5c842', marginTop: '8px', fontWeight: 700 }}>DEFAULT ADDRESS</div>}
+                <p style={{ fontSize: '0.9rem', lineHeight: 1.5, color: 'var(--text-primary)' }}>{addr.address}</p>
+                {addr.is_default && <div style={{ fontSize: '0.65rem', color: 'var(--accent-gold)', marginTop: '8px', fontWeight: 700 }}>DEFAULT ADDRESS</div>}
               </div>
             ))}
           </div>

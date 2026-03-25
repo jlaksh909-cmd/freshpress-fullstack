@@ -52,9 +52,34 @@ export default function OrderTimeline({ status }: OrderTimelineProps) {
             style={{ 
               height: '100%', 
               background: 'linear-gradient(90deg, #f5c842, #4fc3f7)',
-              boxShadow: '0 0 10px rgba(245,200,66,0.3)'
+              boxShadow: '0 0 10px rgba(245,200,66,0.3)',
+              position: 'relative'
             }}
-          />
+          >
+            {/* Animated Truck */}
+            {currentIdx >= 0 && (
+              <motion.div
+                initial={{ left: 0 }}
+                animate={{ left: '100%' }}
+                transition={{ 
+                  duration: 2, 
+                  ease: "easeInOut",
+                  repeat: Infinity,
+                  repeatType: "reverse",
+                  repeatDelay: 1
+                }}
+                style={{
+                  position: 'absolute',
+                  right: -10,
+                  top: -20,
+                  fontSize: '1.2rem',
+                  filter: 'drop-shadow(0 0 5px rgba(245,200,66,0.5))'
+                }}
+              >
+                🚚
+              </motion.div>
+            )}
+          </motion.div>
         </div>
 
         {steps.map((step, idx) => {

@@ -14,6 +14,8 @@ interface ReceiptProps {
     address: string
     status: string
     created_at: string
+    payment_method?: string
+    payment_status?: string
   }
 }
 
@@ -65,6 +67,11 @@ export default function Receipt({ order }: ReceiptProps) {
       doc.text(`#FP-${transactionId}`, 170, 55)
       doc.text(dateStr, 170, 62)
       doc.text(order.status.toUpperCase(), 170, 69)
+      
+      doc.setTextColor(100, 116, 139)
+      doc.text("PAYMENT:", 140, 76)
+      doc.setTextColor(0, 0, 0)
+      doc.text((order.payment_method || 'COD').toUpperCase(), 170, 76)
 
       // Items Table
       autoTable(doc, {
@@ -79,8 +86,20 @@ export default function Receipt({ order }: ReceiptProps) {
         margin: { left: 20, right: 20 }
       })
 
-      // Totals
       const finalY = (doc as any).lastAutoTable.finalY + 10
+
+      // Payment Status
+      if (order.payment_status === 'paid') {
+        doc.setTextColor(16, 185, 129)
+        doc.setFontSize(16)
+        doc.setFont("helvetica", "bold")
+        doc.text("PAID", 170, finalY)
+      } else {
+        doc.setTextColor(245, 158, 11)
+        doc.setFontSize(16)
+        doc.setFont("helvetica", "bold")
+        doc.text("UNPAID", 170, finalY)
+      }
       doc.setFontSize(14)
       doc.text("TOTAL PAID:", 135, finalY + 10)
       doc.setTextColor(16, 185, 129) // Green
@@ -160,6 +179,16 @@ export default function Receipt({ order }: ReceiptProps) {
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.2rem', fontWeight: 900 }}>
           <span>Total Paid</span>
           <span style={{ color: '#10b981' }}>₹{order.price.toFixed(2)}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', fontSize: '0.9rem' }}>
+          <span style={{ color: '#64748b' }}>Payment Method</span>
+          <span style={{ fontWeight: 700 }}>{order.payment_method || 'Cash on Delivery'}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '0.9rem' }}>
+          <span style={{ color: '#64748b' }}>Payment Status</span>
+          <span style={{ fontWeight: 700, color: order.payment_status === 'paid' ? '#10b981' : '#f59e0b' }}>
+            {(order.payment_status || 'pending').toUpperCase()}
+          </span>
         </div>
       </div>
 

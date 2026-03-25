@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
-import { motion } from "framer-motion"
+import { motion, useMotionValue, useSpring, useTransform } from "framer-motion"
 import { RUPEES_PER_POINT, calculatePoints } from "@/lib/points"
 
 interface UserProfile {
@@ -28,28 +28,28 @@ const services: Service[] = [
     id: "wash-fold",
     name: "Wash & Fold",
     description: "Regular laundry service with professional cleaning",
-    price: 149,
+    price: 19,
     icon: "tshirt"
   },
   {
     id: "dry-clean",
     name: "Dry Cleaning",
     description: "Premium care for delicate fabrics",
-    price: 499,
+    price: 99,
     icon: "sparkles"
   },
   {
     id: "iron-press",
     name: "Iron & Press",
     description: "Crisp, wrinkle-free clothes",
-    price: 79,
+    price: 12,
     icon: "iron"
   },
   {
     id: "stain-removal",
     name: "Stain Removal",
     description: "Expert treatment for tough stains",
-    price: 249,
+    price: 49,
     icon: "droplet"
   }
 ]
@@ -58,6 +58,7 @@ import Navbar from "@/app/components/Navbar"
 import { ToastContainer, ToastType } from "@/app/components/Toast"
 import Drawer from "@/app/components/Drawer"
 import AddressAutocomplete from "@/app/components/AddressAutocomplete"
+import PaymentGateway from "@/app/components/PaymentGateway"
 
 export default function HomePage() {
   const [user, setUser] = useState<UserProfile | null>(null)
@@ -76,6 +77,8 @@ export default function HomePage() {
     instructions: ""
   })
   const [bookingLoading, setBookingLoading] = useState(false)
+  const [confirmedBooking, setConfirmedBooking] = useState<{ pickup_date: string; pickup_time: string } | null>(null)
+  const [clothCounts, setClothCounts] = useState({ shirt: 0, tshirt: 0, pant: 0, saree: 0 })
   const [bookingSuccess, setBookingSuccess] = useState(false)
   const [showReview, setShowReview] = useState(false)
   const [chatMessages, setChatMessages] = useState<any[]>([])
@@ -95,7 +98,33 @@ export default function HomePage() {
   const [liveStats, setLiveStats] = useState({ orders: 0, rating: 4.9, customers: 0 })
   const [testimonialIndex, setTestimonialIndex] = useState(0)
   const [toasts, setToasts] = useState<{ id: string; message: string; type: ToastType }[]>([])
+  const [paymentMethod, setPaymentMethod] = useState("COD")
+  const [showPaymentGateway, setShowPaymentGateway] = useState(false)
+  const [pendingBooking, setPendingBooking] = useState<any>(null)
   const router = useRouter()
+
+  // Interactive Parallax
+  const mouseX = useMotionValue(0)
+  const mouseY = useMotionValue(0)
+  const springConfig = { damping: 25, stiffness: 150 }
+  const springX = useSpring(mouseX, springConfig)
+  const springY = useSpring(mouseY, springConfig)
+  
+  const move1X = useTransform(springX, [-0.5, 0.5], [-20, 20])
+  const move1Y = useTransform(springY, [-0.5, 0.5], [-20, 20])
+  const move2X = useTransform(springX, [-0.5, 0.5], [40, -40])
+  const move2Y = useTransform(springY, [-0.5, 0.5], [40, -40])
+  const move3X = useTransform(springX, [-0.5, 0.5], [-60, 60])
+  const move3Y = useTransform(springY, [-0.5, 0.5], [-60, 60])
+
+  const handleHeroMouseMove = (e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = (e.clientX - rect.left) / rect.width - 0.5
+    const y = (e.clientY - rect.top) / rect.height - 0.5
+    mouseX.set(x)
+    mouseY.set(y)
+  }
+
   const supabase = createClient()
 
   useEffect(() => {
@@ -296,21 +325,34 @@ export default function HomePage() {
     setShowReview(false)
     setCouponCode("")
     setCouponApplied(null)
+    setClothCounts({ shirt: 0, tshirt: 0, pant: 0, saree: 0 })
   }
 
   const handleBookingSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedService || !user) return
+    
+    if (!user) {
+      addToast("Please login to place a booking", "error")
+      router.push("/login")
+      return
+    }
+
+    if (!selectedService) {
+      addToast("Please select a service first", "error")
+      return
+    }
 
     setBookingLoading(true)
     
-    const originalPrice = selectedService.price
+    const totalCloths = clothCounts.shirt + clothCounts.tshirt + clothCounts.pant + clothCounts.saree
+    const originalPrice = selectedService.price * Math.max(1, totalCloths)
     const pointsDiscount = usePoints ? Math.min(userPoints * RUPEES_PER_POINT, originalPrice) : 0
     const couponDiscount = getCouponDiscount(originalPrice)
     const finalPrice = Math.max(0, originalPrice - pointsDiscount - couponDiscount)
     const pointsToDeduct = usePoints ? Math.floor(pointsDiscount / RUPEES_PER_POINT) : 0
+    const clothDetails = `Shirt: ${clothCounts.shirt}, T-Shirt: ${clothCounts.tshirt}, Pant: ${clothCounts.pant}, Saree: ${clothCounts.saree}`
 
-    const { error } = await supabase.from("bookings").insert({
+    const bookingPayload = {
       user_id: user.id,
       service_type: selectedService.id,
       service_name: selectedService.name,
@@ -321,11 +363,27 @@ export default function HomePage() {
       pickup_date: bookingData.pickup_date,
       pickup_time: bookingData.pickup_time,
       address: bookingData.address,
-      instructions: bookingData.instructions,
+      instructions: bookingData.instructions ? `${clothDetails} | ${bookingData.instructions}` : clothDetails,
       status: "pending",
       customer_name: user.name || user.email,
-      phone: user.phone || ""
-    })
+      phone: user.phone || "",
+      payment_method: paymentMethod,
+      payment_status: paymentMethod === "COD" ? "pending" : "paid"
+    }
+
+    if (paymentMethod !== "COD") {
+      setPendingBooking({ payload: bookingPayload, pointsToDeduct, total: finalPrice })
+      setShowPaymentGateway(true)
+      setBookingLoading(false)
+      return
+    }
+
+    await completeBooking(bookingPayload, pointsToDeduct)
+  }
+
+  const completeBooking = async (payload: any, pointsToDeduct: number) => {
+    setBookingLoading(true)
+    const { error } = await supabase.from("bookings").insert(payload)
 
     // Increment coupon usage count
     if (!error && couponApplied) {
@@ -357,13 +415,14 @@ export default function HomePage() {
         }
       }
 
+      setConfirmedBooking({ pickup_date: bookingData.pickup_date, pickup_time: bookingData.pickup_time })
       setBookingSuccess(true)
       setShowReview(false)
       setBookingData({ pickup_date: "", pickup_time: "", address: "", instructions: "" })
       addToast("Your order has been placed successfully!", "success")
     } else {
-      console.error("Booking error details:", error)
-      addToast(`Booking failed: ${error.message}`, "error")
+      console.error("Booking Error Object:", error)
+      addToast(`Booking failed: ${error.message || 'Unknown database error'}. Check console for details.`, "error")
     }
     setBookingLoading(false)
   }
@@ -429,151 +488,128 @@ export default function HomePage() {
       <Navbar user={user} />
       <ToastContainer toasts={toasts} onRemove={removeToast} />
 
-      {/* Hero Section */}
-      <section className="hero">
-        <div className="hero-content">
-          <motion.div 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="section-badge"
-          >
-            ✨ Elite Laundry Service
-          </motion.div>
-          <motion.h1 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            style={{ fontSize: '3.5rem', fontWeight: 900, letterSpacing: '-1.5px', lineHeight: 1.1, marginBottom: '24px' }}
-          >
-            Pristine Clothes, <br/>
-            <span style={{ color: 'var(--accent-blue)', background: 'linear-gradient(90deg, #4fc3f7, #2196f3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Zero Effort.</span>
-          </motion.h1>
-          <motion.p 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-            style={{ fontSize: '1.2rem', color: 'var(--text-secondary)', maxWidth: '500px', marginBottom: '40px', lineHeight: 1.6 }}
-          >
-            Experience the future of garment care with FreshPress. High-tech cleaning, express delivery, and a premium experience from start to finish.
-          </motion.p>
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="hero-actions"
-          >
-            <a href="#services" className="btn-primary">Get Clean Clothes</a>
-            <a href="#how-it-works" className="btn-ghost">See How It Works</a>
-          </motion.div>
-          {/* Light Mode Specific Image */}
-          <div className="light-only-hero-img">
-            <img src="/premium_laundry_hero.png" alt="Premium Service" style={{ width: '100%', borderRadius: '24px', marginTop: '40px', display: 'none' }} className="light-hero-img" />
-          </div>
-        </div>
-
-        {/* Hero Visual (Washing Machine) */}
-        <div className="hero-visual">
-          <div className="washer-wrap">
-            <svg className="washer-svg" viewBox="0 0 160 210">
-              <rect x="10" y="10" width="140" height="190" rx="15" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.1)" strokeWidth="2" />
-              <rect x="25" y="25" width="110" height="10" rx="2" fill="rgba(255,255,255,0.05)" />
-              <circle cx="130" cy="30" r="4" fill="var(--accent-gold)" />
-              <circle cx="120" cy="30" r="2" fill="rgba(255,255,255,0.2)" />
-              
-              <g className="drum-spin">
-                <circle cx="80" cy="115" r="48" fill="none" stroke="var(--accent-blue)" strokeWidth="3" strokeDasharray="10 5" opacity="0.6" />
-                <path d="M50 115 A30 30 0 0 1 110 115" stroke="white" strokeWidth="2" fill="none" opacity="0.2" />
-              </g>
-
-              <circle cx="80" cy="115" r="55" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="8" />
-              <rect x="70" y="185" width="20" height="4" rx="1" fill="rgba(255,255,255,0.1)" />
-            </svg>
-
-            {/* Orbital Floating Content (Counter-rotated to stay upright) */}
-            <motion.div animate={{ rotate: 360 }} transition={{ duration: 20, repeat: Infinity, ease: "linear" }} className="orbital-labels">
-              <motion.div 
-                animate={{ rotate: -360, y: [0, -8, 0] }} 
-                transition={{ 
-                  rotate: { duration: 20, repeat: Infinity, ease: "linear" },
-                  y: { duration: 4, repeat: Infinity, ease: "easeInOut" }
-                }} 
-                className="floating-chip label-1"
-                style={{ translateX: '-50%', translateY: '-50%' }}
+      {/* Hero Section (Neo-Dark Design) */}
+      <section 
+        className="hero" 
+        onMouseMove={handleHeroMouseMove}
+        onMouseLeave={() => { mouseX.set(0); mouseY.set(0); }}
+        style={{ 
+        position: 'relative', 
+        paddingTop: '80px', 
+        paddingBottom: '120px', 
+        overflow: 'hidden',
+        background: 'radial-gradient(circle at 70% 50%, rgba(33,150,243,0.15) 0%, transparent 60%), radial-gradient(circle at 30% 80%, rgba(245,200,66,0.05) 0%, transparent 50%)' 
+      }}>
+        <div className="hero-content-neo" style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', position: 'relative', zIndex: 10, flexWrap: 'wrap', gap: '40px' }}>
+          
+          {/* Left Text & CTA */}
+          <div style={{ flex: '1 1 500px', maxWidth: '600px', zIndex: 2 }}>
+            <motion.h1 
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+              style={{ fontSize: 'clamp(3rem, 5vw, 4.5rem)', fontWeight: 900, letterSpacing: '-2px', lineHeight: 1.05, marginBottom: '24px', color: 'var(--text-primary)' }}
+            >
+              Pristine Clothes.<br/>Zero Effort.<br/>
+              <span style={{ color: 'var(--accent-blue)', background: 'linear-gradient(90deg, #4fc3f7, #2196f3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Guaranteed.</span>
+            </motion.h1>
+            <motion.p 
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+              style={{ fontSize: '1.2rem', color: 'var(--text-secondary)', marginBottom: '40px', lineHeight: 1.6, maxWidth: '480px' }}
+            >
+              Experience the future of garment care. High-tech cleaning, precise tracking, and a premium experience right at your doorstep. You won't go back.
+            </motion.p>
+            
+            {/* Inline Input CTA */}
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+              style={{ display: 'flex', alignItems: 'center', background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', borderRadius: '16px', padding: '8px', maxWidth: '480px', backdropFilter: 'blur(10px)' }}
+            >
+              <div style={{ padding: '0 16px', color: 'var(--text-secondary)', fontSize: '1.2rem' }}>📍</div>
+              <input 
+                type="text" 
+                placeholder="Enter your pickup address..." 
+                value={bookingData.address}
+                onChange={(e) => setBookingData({...bookingData, address: e.target.value})}
+                style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-primary)', outline: 'none', fontSize: '1rem' }}
+              />
+              <motion.a 
+                href="#services" 
+                whileHover={{ scale: 1.05, boxShadow: '0 0 30px rgba(245,200,66,0.6)' }}
+                whileTap={{ scale: 0.95 }}
+                style={{ background: 'linear-gradient(135deg, var(--accent-gold), #ff9d00)', color: '#07071a', padding: '12px 24px', borderRadius: '12px', fontWeight: 900, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 0 20px rgba(245,200,66,0.3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}
               >
-                Professional
-              </motion.div>
-              <motion.div 
-                animate={{ rotate: -360, y: [0, -10, 0] }} 
-                transition={{ 
-                  rotate: { duration: 20, repeat: Infinity, ease: "linear" },
-                  y: { duration: 3.5, repeat: Infinity, ease: "easeInOut", delay: 0.5 }
-                }} 
-                className="floating-chip label-2"
-                style={{ translateX: '50%', translateY: '-50%' }}
-              >
-                Careful
-              </motion.div>
-              <motion.div 
-                animate={{ rotate: -360, y: [0, -12, 0] }} 
-                transition={{ 
-                  rotate: { duration: 20, repeat: Infinity, ease: "linear" },
-                  y: { duration: 4.5, repeat: Infinity, ease: "easeInOut", delay: 1 }
-                }} 
-                className="floating-chip label-3"
-                style={{ translateX: '-50%', translateY: '50%' }}
-              >
-                Fast
-              </motion.div>
-              <motion.div 
-                animate={{ rotate: -360, y: [0, -9, 0] }} 
-                transition={{ 
-                  rotate: { duration: 20, repeat: Infinity, ease: "linear" },
-                  y: { duration: 3, repeat: Infinity, ease: "easeInOut", delay: 1.5 }
-                }} 
-                className="floating-chip label-4"
-                style={{ translateX: '-50%', translateY: '-50%' }}
-              >
-                Eco-Friendly
-              </motion.div>
+                Book Now <span style={{ fontSize: '1.2rem', fontWeight: 900 }}>›</span>
+              </motion.a>
             </motion.div>
           </div>
-          <div className="hero-bg-glow"></div>
+
+          {/* Right Abstract Art (Simulating the 3D Pipe graphic) */}
+          <div className="hero-visual-neo" style={{ flex: '1 1 400px', position: 'relative', minHeight: '500px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <motion.div 
+              animate={{ rotate: 360 }} transition={{ duration: 60, repeat: Infinity, ease: "linear" }}
+              style={{ position: 'absolute', width: '450px', height: '450px', border: '2px solid rgba(33,150,243,0.15)', borderRadius: '50%', borderStyle: 'dashed' }}
+            />
+            <motion.div 
+              animate={{ rotate: -360 }} transition={{ duration: 80, repeat: Infinity, ease: "linear" }}
+              style={{ position: 'absolute', width: '350px', height: '350px', border: '1px solid rgba(245,200,66,0.15)', borderRadius: '50%' }}
+            />
+            {/* Tubing Elements with Parallax Wrappers */}
+            <motion.div style={{ x: move1X, y: move1Y, position: 'absolute', zIndex: 11 }}>
+              <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }} style={{ width: '280px', height: '140px', background: 'linear-gradient(135deg, #1e3a8a, #3b82f6)', borderRadius: '70px', transform: 'rotate(15deg) translate(-20px, -40px)', border: '1px solid rgba(255,255,255,0.2)', boxShadow: 'inset 10px 10px 30px rgba(255,255,255,0.3), 0 20px 50px rgba(0,0,0,0.5)' }} />
+            </motion.div>
+            
+            <motion.div style={{ x: move2X, y: move2Y, position: 'absolute', zIndex: 12 }}>
+              <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.5 }} style={{ width: '160px', height: '160px', background: 'linear-gradient(135deg, #ef4444, #f59e0b)', borderRadius: '50%', transform: 'translate(100px, -90px)', border: '1px solid rgba(255,255,255,0.2)', boxShadow: 'inset -5px -5px 20px rgba(0,0,0,0.3), inset 10px 10px 30px rgba(255,255,255,0.4), 0 15px 40px rgba(239,68,68,0.4)' }} />
+            </motion.div>
+            
+            <motion.div style={{ x: move3X, y: move3Y, position: 'absolute', zIndex: 13 }}>
+              <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.6 }} style={{ width: '220px', height: '90px', background: 'linear-gradient(90deg, #ec4899, #8b5cf6)', borderRadius: '45px', transform: 'translate(-80px, 140px) rotate(-25deg)', border: '1px solid rgba(255,255,255,0.2)', boxShadow: 'inset 5px 5px 20px rgba(255,255,255,0.4), 0 15px 30px rgba(236,72,153,0.4)' }} />
+            </motion.div>
+            
+            <motion.div style={{ x: move1X, y: move2Y, position: 'absolute', zIndex: 14 }}>
+              <motion.div animate={{ y: [0, -20, 0] }} transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }} style={{ width: '80px', height: '80px', background: 'linear-gradient(135deg, #4fc3f7, #0284c7)', borderRadius: '50%', transform: 'translate(140px, 130px)', border: '2px solid rgba(255,255,255,0.6)', boxShadow: '0 0 40px rgba(79,195,247,0.6), inset 5px 5px 15px rgba(255,255,255,0.5)' }} />
+            </motion.div>
+            
+            <motion.div style={{ x: move3X, y: move1Y, position: 'absolute', zIndex: 15 }}>
+              <motion.div animate={{ y: [0, 15, 0] }} transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 1 }} style={{ width: '40px', height: '40px', background: '#f8fafc', borderRadius: '50%', transform: 'translate(-160px, -100px)', boxShadow: '0 0 20px rgba(255,255,255,0.4)' }} />
+            </motion.div>
+          </div>
         </div>
       </section>
 
-      {/* Stats Bar */}
-      <section className="stats-bar-section">
-        <div className="stats-bar-container glass" style={{ padding: '32px 48px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '32px' }}>
-          {[
-            { label: 'Active Orders', value: liveStats.orders + 42, icon: (
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
-            ) },
-            { label: 'Avg Turnaround', value: '24h', icon: (
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            ) },
-            { label: 'Customer Trust', value: `${liveStats.rating}/5`, icon: (
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-            ) },
-            { label: 'Elite Members', value: '1.2k+', icon: (
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
-            ) },
-          ].map((stat, i) => (
-            <motion.div 
-              key={stat.label}
-              initial={{ opacity: 0, y: 10 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              style={{ display: 'flex', alignItems: 'center', gap: '24px' }}
-            >
-              <div style={{ padding: '12px', background: 'rgba(245,200,66,0.1)', borderRadius: '12px', color: 'var(--accent-gold)' }}>
-                {stat.icon}
-              </div>
+      {/* Stats Bar / Social Proof (overlapping the hero bottom) */}
+      <section className="stats-bar-section" style={{ position: 'relative', zIndex: 20, marginTop: '-60px' }}>
+        <div className="stats-bar-container glass" style={{ maxWidth: '1100px', margin: '0 auto', background: 'var(--card-bg)', padding: '24px 32px', borderRadius: '24px', display: 'flex', flexWrap: 'wrap', gap: '32px', alignItems: 'center', border: '1px solid var(--glass-border)', boxShadow: '0 20px 50px rgba(0,0,0,0.5)', backdropFilter: 'blur(20px)' }}>
+          {/* Left: "Incredible" profile */}
+          <div style={{ flex: '1 1 200px', minWidth: '200px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <h3 style={{ fontSize: '2rem', fontWeight: 900, margin: 0, color: 'var(--text-primary)', letterSpacing: '-1px' }}>"Incredible"</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#f5c842', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>👤</div>
               <div>
-                <div style={{ fontSize: '1.6rem', fontWeight: 950, color: 'var(--text-primary)', lineHeight: 1.1 }}>{stat.value}</div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 800 }}>{stat.label}</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>Sarah J.</div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Elite Member</div>
               </div>
-            </motion.div>
-          ))}
+            </div>
+          </div>
+          
+          {/* Right: The Stats acting like partner logos */}
+          <div style={{ flex: '3 1 500px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+            {[
+              { label: 'Active Orders', value: liveStats.orders + 42 },
+              { label: 'Avg Turnaround', value: '24h' },
+              { label: 'Customer Trust', value: `${liveStats.rating}/5` },
+              { label: 'Elite Members', value: '1.2k+' },
+            ].map((stat, i) => (
+              <motion.div 
+                key={stat.label} 
+                whileHover={{ y: -5, background: 'var(--glass-bg)', borderColor: 'var(--accent-gold)', boxShadow: '0 10px 20px rgba(0,0,0,0.2)' }}
+                transition={{ duration: 0.2 }}
+                style={{ flex: 1, minWidth: '120px', background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', borderRadius: '16px', padding: '16px 12px', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center' }} 
+              >
+                 <div style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--text-primary)' }}>{stat.value}</div>
+                 <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '4px' }}>{stat.label}</div>
+              </motion.div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -654,8 +690,9 @@ export default function HomePage() {
           <p className="section-subtitle">Tailored cleaning solutions for every fabric type and style.</p>
         </div>
         
-        <div className="services-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '32px' }}>
-          {services.map((service, i) => (
+        {!showBookingModal ? (
+          <div className="services-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '32px' }}>
+            {services.map((service, i) => (
             <motion.div 
               key={service.id} 
               className="service-card glass"
@@ -684,7 +721,7 @@ export default function HomePage() {
               <div className="service-footer" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '20px', marginTop: 'auto' }}>
                 <div>
                   <span className="service-price" style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--accent-gold)' }}>₹{service.price}</span>
-                  <span className="service-unit" style={{ fontSize: '0.8rem', opacity: 0.5, marginLeft: '4px' }}>/kg</span>
+                  <span className="service-unit" style={{ fontSize: '0.8rem', opacity: 0.5, marginLeft: '4px' }}>/cloth</span>
                 </div>
                 <button 
                   onClick={() => openBookingModal(service)}
@@ -696,23 +733,20 @@ export default function HomePage() {
               </div>
             </motion.div>
           ))}
-        </div>
-      </section>
-
-
-      {/* Booking Modal (Redesigned Phase 12) */}
-      {showBookingModal && (
-        <div className="modal-overlay">
+          </div>
+        ) : (
           <motion.div 
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            className="modal-container-premium glass"
+            className="inline-booking-container glass"
+            style={{ borderRadius: '24px', position: 'relative', border: '1px solid var(--glass-border)', overflow: 'hidden', padding: '0', maxWidth: '650px', margin: '0 auto', background: 'var(--card-bg)' }}
           >
             <button 
               onClick={() => setShowBookingModal(false)}
-              className="modal-close-premium"
+              className="btn-ghost"
+              style={{ position: 'absolute', top: '16px', right: '16px', zIndex: 10, padding: '8px 16px', borderRadius: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--modal-bg)', border: '1px solid var(--glass-border)' }}
             >
-              ✕
+              ← Back
             </button>
 
             <div className="modal-premium-grid">
@@ -721,16 +755,13 @@ export default function HomePage() {
                 <div className="modal-service-icon-wrap">
                   {selectedService?.icon === 'tshirt' ? '👕' : selectedService?.icon === 'sparkles' ? '✨' : selectedService?.icon === 'iron' ? '👔' : '💧'}
                 </div>
-                <div className="section-badge" style={{ marginBottom: '16px' }}>Service Selection</div>
-                <h2 className="modal-title-premium">{selectedService?.name}</h2>
-                <p className="modal-desc-premium">{selectedService?.description}</p>
-                <div className="modal-price-tag">
-                  Starting from <span>₹{selectedService?.price}</span>
+                <div>
+                  <div className="section-badge" style={{ marginBottom: '8px', fontSize: '0.7rem' }}>Service Selection</div>
+                  <h2 className="modal-title-premium">{selectedService?.name}</h2>
+                  <p className="modal-desc-premium">{selectedService?.description}</p>
                 </div>
-                <div className="modal-service-perks">
-                  <div className="perk-item">✓ Eco-Friendly Wash</div>
-                  <div className="perk-item">✓ 24h Express Delivery</div>
-                  <div className="perk-item">✓ Professional Care</div>
+                <div className="modal-price-tag">
+                  <span>₹{selectedService?.price}</span><small>/cloth</small>
                 </div>
               </div>
 
@@ -744,13 +775,41 @@ export default function HomePage() {
                   >
                     <div className="success-icon-premium">🎉</div>
                     <h3 style={{ fontSize: '1.8rem', fontWeight: 900, marginBottom: '12px' }}>Order Placed!</h3>
-                    <p style={{ color: 'var(--text-secondary)', marginBottom: '32px' }}>We'll see you on <strong>{bookingData.pickup_date}</strong> at <strong>{bookingData.pickup_time}</strong>.</p>
+                    <p style={{ color: 'var(--text-secondary)', marginBottom: '32px' }}>We'll see you on <strong>{confirmedBooking?.pickup_date}</strong> at <strong>{confirmedBooking?.pickup_time}</strong>.</p>
                     <button onClick={() => setShowBookingModal(false)} className="btn-primary" style={{ width: '100%' }}>Return Home</button>
                   </motion.div>
                 ) : (
                   <form onSubmit={handleBookingSubmit} className="mform-premium">
                     <h3 className="form-header-premium">Schedule Pickup</h3>
-                    
+
+                    {/* Cloth Count Section */}
+                    <div className="mform-group">
+                      <label>🧺 Select Clothes</label>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+                        {([['shirt', '👔 Shirt'], ['tshirt', '👕 T-Shirt'], ['pant', '👖 Pant'], ['saree', '🥻 Saree']] as const).map(([key, label]) => (
+                          <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '10px 14px', border: '1px solid rgba(255,255,255,0.07)' }}>
+                            <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{label}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <button
+                                type="button"
+                                onClick={() => setClothCounts(prev => ({ ...prev, [key]: Math.max(0, prev[key] - 1) }))}
+                                style={{ width: '30px', height: '30px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: 'var(--text-primary)', fontSize: '1.1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                              >−</button>
+                              <span style={{ minWidth: '20px', textAlign: 'center', fontWeight: 700, fontSize: '1rem' }}>{clothCounts[key]}</span>
+                              <button
+                                type="button"
+                                onClick={() => setClothCounts(prev => ({ ...prev, [key]: prev[key] + 1 }))}
+                                style={{ width: '30px', height: '30px', borderRadius: '8px', border: '1px solid rgba(79,195,247,0.3)', background: 'rgba(79,195,247,0.1)', color: 'var(--accent-blue)', fontSize: '1.1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                              >+</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {(clothCounts.shirt + clothCounts.tshirt + clothCounts.pant + clothCounts.saree) === 0 && (
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px' }}>Add at least 1 item — price will auto-calculate</p>
+                      )}
+                    </div>
+
                     <div className="mform-grid">
                       <div className="mform-group">
                         <label>Pickup Date</label>
@@ -800,6 +859,7 @@ export default function HomePage() {
                         value={bookingData.address}
                         onChange={(val) => setBookingData({...bookingData, address: val})}
                         placeholder="Search for your pickup location..."
+                        required={true}
                       />
                     </div>
 
@@ -845,42 +905,105 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    {/* Summary */}
-                    <div className="booking-summary-mini">
-                      <div className="summary-row">
-                        <span>Original Price</span>
-                        <span>₹{selectedService?.price}</span>
-                      </div>
-                      {usePoints && (
-                        <div className="summary-row discount">
-                          <span>🌟 Points Discount</span>
-                          <span>-₹{Math.min((userPoints * RUPEES_PER_POINT), selectedService?.price || 0).toFixed(2)}</span>
-                        </div>
-                      )}
-                      {couponApplied && (
-                        <div className="summary-row discount">
-                          <span>🎟️ Coupon ({couponApplied.code})</span>
-                          <span>-₹{getCouponDiscount(selectedService?.price || 0).toFixed(2)}</span>
-                        </div>
-                      )}
-                      <div className="summary-row total">
-                        <span>Total Payable</span>
-                        <span>₹{Math.max(0, (selectedService?.price || 0) - (usePoints ? Math.min(userPoints * RUPEES_PER_POINT, selectedService?.price || 0) : 0) - getCouponDiscount(selectedService?.price || 0)).toFixed(2)}</span>
+                    {/* Payment Method */}
+                    <div className="mform-group">
+                      <label>💳 Payment Method</label>
+                      <div className="payment-options-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px', marginTop: '10px' }}>
+                        {[
+                          { id: 'COD', label: 'Cash / COD', icon: '💵' },
+                          { id: 'UPI', label: 'UPI / QR', icon: '📱' },
+                          { id: 'Card', label: 'Card Payment', icon: '💳' },
+                          { id: 'Online', label: 'Net Banking', icon: '🌐' },
+                          { id: 'Wallet', label: 'Wallet', icon: '👛' }
+                        ].map(method => (
+                          <button
+                            key={method.id}
+                            type="button"
+                            onClick={() => setPaymentMethod(method.id)}
+                            className={`payment-chip ${paymentMethod === method.id ? 'active' : ''}`}
+                            style={{
+                              padding: '12px 10px',
+                              borderRadius: '12px',
+                              border: paymentMethod === method.id ? '2px solid var(--accent-gold)' : '1px solid var(--glass-border)',
+                              background: paymentMethod === method.id ? 'rgba(245,200,66,0.1)' : 'rgba(255,255,255,0.03)',
+                              color: paymentMethod === method.id ? 'var(--accent-gold)' : 'var(--text-secondary)',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              gap: '6px',
+                              transition: 'all 0.2s',
+                              fontSize: '0.8rem',
+                              fontWeight: 600
+                            }}
+                          >
+                            <span style={{ fontSize: '1.2rem' }}>{method.icon}</span>
+                            {method.label}
+                          </button>
+                        ))}
                       </div>
                     </div>
+                    {(() => {
+                      const totalCloths = clothCounts.shirt + clothCounts.tshirt + clothCounts.pant + clothCounts.saree
+                      const basePrice = (selectedService?.price || 0) * Math.max(1, totalCloths)
+                      const ptDiscount = usePoints ? Math.min(userPoints * RUPEES_PER_POINT, basePrice) : 0
+                      const cpDiscount = getCouponDiscount(basePrice)
+                      const total = Math.max(0, basePrice - ptDiscount - cpDiscount)
+                      return (
+                        <div className="booking-summary-mini">
+                          <div className="summary-row">
+                            <span>Items ({Math.max(1, totalCloths)} cloth{Math.max(1, totalCloths) > 1 ? 's' : ''} × ₹{selectedService?.price})</span>
+                            <span>₹{basePrice.toFixed(2)}</span>
+                          </div>
+                          {usePoints && (
+                            <div className="summary-row discount">
+                              <span>🌟 Points Discount</span>
+                              <span>-₹{ptDiscount.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {couponApplied && (
+                            <div className="summary-row discount">
+                              <span>🎟️ Coupon ({couponApplied.code})</span>
+                              <span>-₹{cpDiscount.toFixed(2)}</span>
+                            </div>
+                          )}
+                          <div className="summary-row total">
+                            <span>Total Payable</span>
+                            <span>₹{total.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      )
+                    })()}
 
                     <div style={{ marginTop: '24px' }}>
-                      <button type="submit" className="btn-primary" disabled={loading} style={{ width: '100%', height: '52px' }}>
-                        {loading ? <div className="spinner"></div> : "Confirm Booking"}
+                      <button type="submit" className="btn-primary" disabled={bookingLoading} style={{ width: '100%', height: '52px' }}>
+                        {bookingLoading ? <div className="spinner"></div> : "Confirm Booking"}
                       </button>
                     </div>
                   </form>
-                )}
+                 )}
               </div>
             </div>
           </motion.div>
-        </div>
-      )}
+        )}
+        
+        {showPaymentGateway && pendingBooking && (
+          <PaymentGateway 
+            amount={pendingBooking.total}
+            method={paymentMethod}
+            onSuccess={() => {
+              setShowPaymentGateway(false)
+              completeBooking(pendingBooking.payload, pendingBooking.pointsToDeduct)
+              setPendingBooking(null)
+            }}
+            onCancel={() => {
+              setShowPaymentGateway(false)
+              setPendingBooking(null)
+              addToast("Payment cancelled", "info")
+            }}
+          />
+        )}
+      </section>
 
       {/* Footer */}
       <footer className="footer">

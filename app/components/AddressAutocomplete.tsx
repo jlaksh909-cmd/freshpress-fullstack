@@ -7,6 +7,7 @@ interface AddressAutocompleteProps {
   onChange: (value: string) => void
   placeholder?: string
   style?: React.CSSProperties
+  required?: boolean
 }
 
 declare global {
@@ -19,7 +20,8 @@ export default function AddressAutocomplete({
   value, 
   onChange, 
   placeholder = "Search for your address...",
-  style 
+  style,
+  required = false
 }: AddressAutocompleteProps) {
   const [suggestions, setSuggestions] = useState<any[]>([])
   const [showDropdown, setShowDropdown] = useState(false)
@@ -118,6 +120,7 @@ export default function AddressAutocomplete({
         onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
         placeholder={placeholder}
         autoComplete="off"
+        required={required}
         className="autocomplete-input"
         style={{ width: '100%', borderRadius: '16px' }}
       />
