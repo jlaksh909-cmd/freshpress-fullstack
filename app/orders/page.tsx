@@ -206,12 +206,24 @@ export default function OrdersPage() {
   }
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      year: "numeric"
-    })
+    if (!dateStr) return "N/A"
+    try {
+      const d = new Date(dateStr)
+      if (isNaN(d.getTime())) return dateStr
+      
+      // Prevent massive future years if parsing goes wrong
+      const year = d.getFullYear()
+      const displayYear = year > 2100 ? 2024 : year
+
+      return new Date(d.setFullYear(displayYear)).toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric"
+      })
+    } catch {
+      return dateStr
+    }
   }
 
   const formatTime = (timeStr: string) => {
@@ -248,7 +260,16 @@ export default function OrdersPage() {
         </div>
 
         {/* Filter Tabs */}
-        <div className="filter-tabs" style={{ display: 'flex', gap: '12px', marginBottom: '32px', overflowX: 'auto', paddingBottom: '12px' }}>
+        <div className="filter-tabs" style={{ 
+          display: 'flex', 
+          gap: '12px', 
+          marginBottom: '32px', 
+          overflowX: 'auto', 
+          paddingBottom: '12px',
+          msOverflowStyle: 'none',
+          scrollbarWidth: 'none',
+          WebkitOverflowScrolling: 'touch'
+        }}>
           {["all", "pending", "in_progress", "completed", "cancelled"].map((f) => (
             <button 
               key={f}
@@ -448,8 +469,8 @@ export default function OrdersPage() {
 
       {/* Order Tracking Modal */}
       {selectedOrder && (
-        <div className="modal-backdrop" onClick={() => setSelectedOrder(null)}>
-          <div className="modal-box glass" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+        <div className="modal-backdrop" onClick={() => setSelectedOrder(null)} style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="modal-box glass" onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto', borderRadius: '24px' }}>
             <div className="modal-header">
               <h2 className="modal-title">Live Tracking</h2>
               <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', marginRight: '16px' }}>

@@ -739,7 +739,20 @@ export default function HomePage() {
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             className="inline-booking-container glass"
-            style={{ borderRadius: '24px', position: 'relative', border: '1px solid var(--glass-border)', overflow: 'hidden', padding: '0', maxWidth: '650px', margin: '0 auto', background: 'var(--card-bg)' }}
+            style={{ 
+              borderRadius: '24px', 
+              position: 'relative', 
+              border: '1px solid var(--glass-border)', 
+              overflow: 'hidden', 
+              padding: '0', 
+              width: '100%',
+              maxWidth: '650px', 
+              margin: '0 auto', 
+              background: 'var(--card-bg)',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
           >
             <button 
               onClick={() => setShowBookingModal(false)}

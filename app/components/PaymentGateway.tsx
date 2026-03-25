@@ -170,8 +170,8 @@ export default function PaymentGateway({ amount, method, onSuccess, onCancel }: 
   }
 
   return (
-    <div className="modal-backdrop" style={{ zIndex: 3000, background: 'rgba(7, 7, 26, 0.95)', backdropFilter: 'blur(10px)' }}>
-      <div className="modal-box glass" style={{ maxWidth: '420px', padding: '32px', border: '1px solid rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+    <div className="modal-backdrop" style={{ zIndex: 3000, background: 'rgba(7, 7, 26, 0.95)', backdropFilter: 'blur(10px)', padding: '20px' }}>
+      <div className="modal-box glass" style={{ width: '100%', maxWidth: '420px', padding: '24px', border: '1px solid rgba(255,255,255,0.1)', overflow: 'hidden' }}>
         <AnimatePresence mode="wait">
           {renderContent()}
         </AnimatePresence>
