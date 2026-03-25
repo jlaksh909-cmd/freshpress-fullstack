@@ -88,7 +88,7 @@ interface Message {
 }
 
 
-const AdminDashboard = () => {
+export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<'reviews' | 'orders' | 'users' | 'messages' | 'inventory' | 'coupons'>('reviews')
   const [loading, setLoading] = useState(true)
   const [profiles, setProfiles] = useState<Profile[]>([])

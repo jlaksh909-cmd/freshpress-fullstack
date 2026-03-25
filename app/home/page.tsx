@@ -132,18 +132,20 @@ export default function HomePage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const { data: profile } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .single()
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single()
 
-        setUser({
-          id: user.id,
-          name: user.user_metadata?.name || null,
-          email: user.email || "",
-          phone: user.user_metadata?.phone || null,
-          role: profile?.role || 'user'
-        })
+    if (profile) {
+      setUser({
+        id: user.id,
+        name: profile.full_name || null,
+        email: user.email || "",
+        phone: profile.phone || "",
+        role: profile.role || 'user'
+      })
+    }
       }
       setLoading(false)
     }
@@ -193,6 +195,7 @@ export default function HomePage() {
       }
 
       // Realtime subscription
+      if (!user) return
       const channel = supabase
         .channel(`chat-user-${user.id}`)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` }, (payload) => {
@@ -394,7 +397,7 @@ export default function HomePage() {
       } catch { /* silent fail */ }
     }
 
-    if (!error) {
+    if (!error && user && selectedService) {
       // Deduct points if used
       if (pointsToDeduct > 0) {
         await supabase.rpc('deduct_points', { 
@@ -422,7 +425,7 @@ export default function HomePage() {
       addToast("Your order has been placed successfully!", "success")
     } else {
       console.error("Booking Error Object:", error)
-      addToast(`Booking failed: ${error.message || 'Unknown database error'}. Check console for details.`, "error")
+      addToast(`Booking failed: ${error?.message || 'Unknown database error'}. Check console for details.`, "error")
     }
     setBookingLoading(false)
   }
@@ -465,7 +468,7 @@ export default function HomePage() {
     })
 
     if (error) {
-      addToast(`Failed to post review: ${error.message}`, "error")
+      addToast(`Failed to post review: ${error?.message}`, "error")
     } else {
       addToast("Thank you for your review!", "success")
       setReviewForm({ rating: 5, comment: "" })
