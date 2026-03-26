@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import ChatSupport from "./components/ChatSupport"
 import MobileBottomNav from "./components/MobileBottomNav"
 import LoginTracker from "./components/LoginTracker"
+import Footer from "./components/Footer"
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -36,11 +37,26 @@ export default function RootLayout({
             `,
           }}
         />
+        {/* Placeholder for Analytics Integration (e.g. Google Analytics) */}
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.dataLayer = window.dataLayer || [];
+              function gtag(){dataLayer.push(arguments);}
+              gtag('js', new Date());
+              gtag('config', 'G-XXXXXXXXXX', {
+                page_path: window.location.pathname,
+              });
+            `,
+          }}
+        />
         <link rel="icon" href="/logo.png" />
         <link rel="manifest" href="/manifest.json" />
       </head>
       <body>
         <main>{children}</main>
+        <Footer />
         <ChatSupport />
         <MobileBottomNav />
         <LoginTracker />

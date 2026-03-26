@@ -60,6 +60,8 @@ export default function ProfilePage() {
         return
       }
 
+      setProfile(prev => ({ ...prev, id: user.id, email: user.email || "" }))
+
       const { data, error } = await supabase
         .from("profiles")
         .select("*")
@@ -164,15 +166,28 @@ export default function ProfilePage() {
     e.preventDefault()
     setSaving(true)
     
+    // In case profile.id is missing somehow, fetch current user safely
+    let userId = profile.id;
+    if (!userId) {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) userId = user.id
+    }
+
+    if (!userId) {
+      addToast("Authentication error, please login again.", "error")
+      setSaving(false)
+      return
+    }
+
     const { error } = await supabase
       .from("profiles")
-      .update({
+      .upsert({
+        id: userId,
         full_name: profile.full_name,
         phone: profile.phone,
         address: profile.address,
         updated_at: new Date().toISOString()
-      })
-      .eq("id", profile.id)
+      }, { onConflict: 'id' })
 
     if (error) {
       addToast(error.message, "error")

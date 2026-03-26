@@ -7,10 +7,12 @@ import { motion } from "framer-motion"
 import { createClient } from "@/lib/supabase/client"
 import { ToastContainer, ToastType } from "@/app/components/Toast"
 import ThemeToggle from "@/app/components/ThemeToggle"
+import { Eye, EyeOff } from "lucide-react"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [toasts, setToasts] = useState<{ id: string; message: string; type: ToastType }[]>([])
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
@@ -186,14 +188,37 @@ export default function LoginPage() {
               <label>Password</label>
               <Link href="/forgot-password" style={{ fontSize: '0.75rem', color: '#f5c842', textDecoration: 'none' }}>Forgot password?</Link>
             </div>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              autoComplete="current-password"
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                autoComplete="current-password"
+                style={{ paddingRight: '40px', width: '100%', boxSizing: 'border-box' }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{
+                  position: 'absolute',
+                  right: '12px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(238,242,255,0.5)',
+                  cursor: 'pointer',
+                  padding: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
 
           <button type="submit" className="modal-submit" disabled={loading} style={{ marginTop: '12px' }}>

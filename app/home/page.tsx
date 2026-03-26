@@ -129,28 +129,26 @@ export default function HomePage() {
 
   useEffect(() => {
     async function getUser() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+      if (authUser) {
         const { data: profile } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single()
+          .from("profiles")
+          .select("*")
+          .eq("id", authUser.id)
+          .single()
 
-    if (profile) {
-      setUser({
-        id: user.id,
-        name: profile.full_name || null,
-        email: user.email || "",
-        phone: profile.phone || "",
-        role: profile.role || 'user'
-      })
-    }
+        setUser({
+          id: authUser.id,
+          name: profile?.full_name || authUser.user_metadata?.full_name || null,
+          email: authUser.email || "",
+          phone: profile?.phone || authUser.user_metadata?.phone || "",
+          role: profile?.role || 'user'
+        })
       }
       setLoading(false)
     }
     getUser()
-  }, [supabase.auth])
+  }, [])
 
   useEffect(() => {
     async function fetchSavedAddresses() {
@@ -334,10 +332,24 @@ export default function HomePage() {
   const handleBookingSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!user) {
-      addToast("Please login to place a booking", "error")
-      router.push("/login")
-      return
+    let activeUser = user;
+    if (!activeUser) {
+      // Emergency fallback check in case state was lost
+      const { data: { user: fetchUser } } = await supabase.auth.getUser()
+      if (fetchUser) {
+        activeUser = {
+          id: fetchUser.id,
+          name: fetchUser.user_metadata?.full_name || null,
+          email: fetchUser.email || "",
+          phone: fetchUser.user_metadata?.phone || "",
+          role: "user"
+        }
+        setUser(activeUser)
+      } else {
+        addToast("Please login to place a booking", "error")
+        router.push("/login")
+        return
+      }
     }
 
     if (!selectedService) {
@@ -356,7 +368,7 @@ export default function HomePage() {
     const clothDetails = `Shirt: ${clothCounts.shirt}, T-Shirt: ${clothCounts.tshirt}, Pant: ${clothCounts.pant}, Saree: ${clothCounts.saree}`
 
     const bookingPayload = {
-      user_id: user.id,
+      user_id: activeUser.id,
       service_type: selectedService.id,
       service_name: selectedService.name,
       price: finalPrice,
@@ -368,8 +380,8 @@ export default function HomePage() {
       address: bookingData.address,
       instructions: bookingData.instructions ? `${clothDetails} | ${bookingData.instructions}` : clothDetails,
       status: "pending",
-      customer_name: user.name || user.email,
-      phone: user.phone || "",
+      customer_name: activeUser.name || activeUser.email,
+      phone: activeUser.phone || "",
       payment_method: paymentMethod,
       payment_status: paymentMethod === "COD" ? "pending" : "paid"
     }
@@ -381,10 +393,11 @@ export default function HomePage() {
       return
     }
 
-    await completeBooking(bookingPayload, pointsToDeduct)
+    await completeBooking(bookingPayload, pointsToDeduct, activeUser)
   }
 
-  const completeBooking = async (payload: any, pointsToDeduct: number) => {
+  const completeBooking = async (payload: any, pointsToDeduct: number, passedUser?: UserProfile) => {
+    const bookingUser = passedUser || user;
     setBookingLoading(true)
     const { error } = await supabase.from("bookings").insert(payload)
 
@@ -397,20 +410,20 @@ export default function HomePage() {
       } catch { /* silent fail */ }
     }
 
-    if (!error && user && selectedService) {
+    if (!error && bookingUser && selectedService) {
       // Deduct points if used
       if (pointsToDeduct > 0) {
         await supabase.rpc('deduct_points', { 
-          p_user_id: user.id, 
+          p_user_id: bookingUser.id, 
           p_amount: pointsToDeduct,
           p_desc: `Redeemed for ${selectedService.name} booking`
         })
         // Fallback if RPC isn't available: manual update (less safe but works for demo)
-        const { data: current } = await supabase.from("user_points").select("balance").eq("user_id", user.id).single()
+        const { data: current } = await supabase.from("user_points").select("balance").eq("user_id", bookingUser.id).single()
         if (current) {
-          await supabase.from("user_points").update({ balance: current.balance - pointsToDeduct }).eq("user_id", user.id)
+          await supabase.from("user_points").update({ balance: current.balance - pointsToDeduct }).eq("user_id", bookingUser.id)
           await supabase.from("points_history").insert({
-            user_id: user.id,
+            user_id: bookingUser.id,
             amount: -pointsToDeduct,
             transaction_type: 'redeemed',
             description: `Redeemed for ${selectedService.name} booking`
